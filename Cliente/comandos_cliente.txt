@@ -1,1 +1,0 @@
-aca detallaré los comandos que utilizamos para levantar e inicializar el lado del cliente, usando react
