@@ -1,15 +1,36 @@
+import '@fontsource-variable/inter';
 import './globals.css';
+import StoreHeader from '@/components/StoreHeader';
+import StoreFooter from '@/components/StoreFooter';
+import RegistrarSW from '@/components/RegistrarSW';
 
 export const metadata = {
-  title: 'Mario A. Guerrisi — Sistema',
-  description: 'Sistema de gestión para la tienda de música Mario A. Guerrisi',
-  icons: { icon: '/logoMarca2.jpg' },
+  title: { default: 'Mario A. Guerrisi — Instrumentos musicales', template: '%s' },
+  description: 'Tienda online de instrumentos musicales y accesorios Mario A. Guerrisi.',
+  applicationName: 'Guerrisi',
+  icons: {
+    icon: [{ url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }],
+    apple: '/icons/apple-touch-icon.png',
+  },
+  appleWebApp: { capable: true, title: 'Guerrisi', statusBarStyle: 'default' },
+};
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#E33141',
 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="es">
-      <body>{children}</body>
+    <html lang="es-AR">
+      <body className="store-body">
+        <StoreHeader />
+        <main className="store-main">{children}</main>
+        <StoreFooter />
+        <RegistrarSW />
+      </body>
     </html>
   );
 }

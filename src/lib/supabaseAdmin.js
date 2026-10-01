@@ -18,6 +18,11 @@ export function getSupabaseAdmin() {
     throw new Error('Faltan NEXT_PUBLIC_SUPABASE_URL o SUPABASE_SERVICE_KEY en .env.local');
   }
 
+  // Valores de ejemplo del .env.example sin reemplazar
+  if (/TU-PROYECTO/i.test(supabaseUrl) || /^tu_/i.test(supabaseServiceKey)) {
+    throw new Error('.env.local todavía tiene los valores de ejemplo: completá NEXT_PUBLIC_SUPABASE_URL y SUPABASE_SERVICE_KEY con los de tu proyecto y reiniciá el servidor.');
+  }
+
   cliente = createClient(supabaseUrl, supabaseServiceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });

@@ -30,3 +30,12 @@ En un proyecto de Supabase nuevo, ejecutar en el SQL Editor y en este orden:
 
 ## Seguridad
 `.env.local` no se sube a git. `SUPABASE_SERVICE_KEY` solo se usa en `src/lib/supabaseAdmin.js` (marcado `server-only`).
+
+## HU-32 — Catálogo web responsivo (PWA)
+
+- **Pantalla:** `/catalogo` (la raíz `/` redirige ahí). Búsqueda con debounce, filtros por categoría/marca/origen, orden, vista grilla/lista y paginación. Los filtros viven en la URL (se pueden compartir). En móvil los selectores pasan a un modal "Filtros".
+- **API:** `GET /api/catalogo` y `GET /api/catalogo/filtros` → `src/server/services/catalogoService.js`. Devuelve solo artículos activos y la **disponibilidad** (`en_stock` / `ultimas` / `sin_stock`) calculada como `cantidad − cantidad_reservada` por depósito activo; nunca el stock físico exacto.
+- **Sincronización con el ERP:** el catálogo se lee siempre de la base central (sin caché) y el cliente lo vuelve a pedir cada 30 s mientras la pestaña está visible, al volver a la pestaña y al recuperar conexión.
+- **PWA:** `src/app/manifest.js`, íconos en `public/icons/` y service worker `public/sw.js` (se registra solo en producción). Para probarlo: `npm run build && npm run start`, abrir `http://localhost:3000` en Chrome y usar "Instalar app".
+- **Base de datos:** ejecutar una vez `docs/database/migracion_catalogo_sprint4.sql` en el SQL Editor de Supabase (índices para que la búsqueda responda rápido).
+- **Nota:** las variables `NEXT_PUBLIC_*` se incorporan en el build; si cambiás `.env.local`, volvé a correr `npm run build`.
