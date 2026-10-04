@@ -26,6 +26,9 @@ export default function StoreHeader() {
         </Link>
 
         <nav className="store-nav" aria-label="Principal">
+          <Link href="/carrito" className={`store-nav-link ${pathname?.startsWith('/carrito') ? 'active' : ''}`} aria-current={pathname?.startsWith('/carrito') ? 'page' : undefined}>
+            Carrito de compras
+          </Link>
           <Link href="/catalogo" className={`store-nav-link ${enCatalogo ? 'active' : ''}`} aria-current={enCatalogo ? 'page' : undefined}>
             Catálogo
           </Link>
