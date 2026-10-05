@@ -38,6 +38,10 @@ export default function CarritoClient() {
   const [pendingClient, setPendingClient] = useState(null);
   const [verifyCode, setVerifyCode] = useState(Array(6).fill(''));
 
+  // Payment Modal State
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isPaying, setIsPaying] = useState(false);
+
   // Handle product search
   useEffect(() => {
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
@@ -127,8 +131,42 @@ export default function CarritoClient() {
     }
   };
 
-  const handlePago = () => {
-    alert('Continuar con el pago... (Funcionalidad pendiente)');
+  const handlePagoClick = () => {
+    if (!cliente) {
+      alert('Por favor, identifíquese como cliente primero.');
+      return;
+    }
+    setIsPaymentModalOpen(true);
+  };
+
+  const handleIniciarPago = async () => {
+    setIsPaying(true);
+    try {
+      const payload = {
+        carrito,
+        cliente,
+        tipoEntrega,
+        total,
+        subtotalProductos,
+        costoEnvio
+      };
+      const res = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (res.ok && data.init_point) {
+        window.location.href = data.init_point;
+      } else {
+        alert('Error al iniciar el pago: ' + (data.error || 'Error desconocido'));
+        setIsPaying(false);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error de conexión al procesar el pago.');
+      setIsPaying(false);
+    }
   };
 
   return (
@@ -335,7 +373,7 @@ export default function CarritoClient() {
             className="btn btn-primary" 
             style={{ width: '100%', padding: '1rem', fontSize: '1.1rem' }}
             disabled={carrito.length === 0}
-            onClick={handlePago}
+            onClick={handlePagoClick}
           >
             Continuar con el pago
           </button>
@@ -383,6 +421,22 @@ export default function CarritoClient() {
               </button>
             </>
           )}
+        </div>
+      </Modal>
+
+      <Modal isOpen={isPaymentModalOpen} onClose={() => !isPaying && setIsPaymentModalOpen(false)} title="Confirmar Pago">
+        <div style={{ padding: '1rem' }}>
+          <p style={{ marginBottom: '1.5rem', fontSize: '1.1rem' }}>
+            Está por iniciar la instancia de pago de Mercado Pago por un total de <strong>${total.toLocaleString('es-AR')}</strong>. ¿Desea continuar?
+          </p>
+          <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+            <button type="button" className="btn btn-outline" onClick={() => setIsPaymentModalOpen(false)} disabled={isPaying}>
+              Volver
+            </button>
+            <button type="button" className="btn btn-primary" onClick={handleIniciarPago} disabled={isPaying}>
+              {isPaying ? 'Iniciando...' : 'Sí'}
+            </button>
+          </div>
         </div>
       </Modal>
     </div>
