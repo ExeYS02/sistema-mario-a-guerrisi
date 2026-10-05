@@ -11,9 +11,13 @@ export default function CarritoClient() {
     agregarAlCarrito,
     modificarCantidad,
     eliminarDelCarrito,
+    subtotalProductos,
+    costoEnvio,
     total,
     cliente,
-    setCliente
+    setCliente,
+    tipoEntrega,
+    setTipoEntrega
   } = useCart();
   
   // Search state
@@ -208,7 +212,13 @@ export default function CarritoClient() {
               </table>
             )}
             <div style={{ textAlign: 'right', marginTop: '1rem', fontSize: '1.25rem' }}>
-              <strong>Total: ${total.toLocaleString('es-AR')}</strong>
+              {tipoEntrega === 'envio' && carrito.length > 0 && (
+                <div style={{ fontSize: '0.85em', color: '#666', marginBottom: '0.25rem' }}>
+                  Subtotal productos: ${subtotalProductos.toLocaleString('es-AR')} <br/>
+                  Costo de envío: ${costoEnvio.toLocaleString('es-AR')}
+                </div>
+              )}
+              <strong>Total Final: ${total.toLocaleString('es-AR')}</strong>
             </div>
           </div>
         </div>
@@ -240,6 +250,7 @@ export default function CarritoClient() {
                   <div>DNI: {cliente.dni}</div>
                   {cliente.email && <div>Email: {cliente.email}</div>}
                   {cliente.telefono && <div>Tel: {cliente.telefono}</div>}
+                  {cliente.direccion && <div>Dirección: {cliente.direccion}</div>}
                 </div>
                 <button type="button" className="btn btn-outline" style={{ width: '100%', padding: '0.5rem' }} onClick={() => setCliente(null)}>
                   Cambiar cliente
@@ -254,6 +265,7 @@ export default function CarritoClient() {
                   <input type="text" placeholder="Nombre completo" value={nuevoCliente.razonSocial} onChange={(e) => setNuevoCliente({ ...nuevoCliente, razonSocial: e.target.value })} style={{ padding: '0.5rem' }} />
                   <input type="email" placeholder="Email (opcional)" value={nuevoCliente.email} onChange={(e) => setNuevoCliente({ ...nuevoCliente, email: e.target.value })} style={{ padding: '0.5rem' }} />
                   <input type="text" placeholder="Teléfono (opcional)" value={nuevoCliente.telefono} onChange={(e) => setNuevoCliente({ ...nuevoCliente, telefono: e.target.value })} style={{ padding: '0.5rem' }} />
+                  <input type="text" placeholder="Dirección (opcional)" value={nuevoCliente.direccion} onChange={(e) => setNuevoCliente({ ...nuevoCliente, direccion: e.target.value })} style={{ padding: '0.5rem' }} />
                   <button type="button" className="btn btn-outline" style={{ marginTop: '0.5rem' }} onClick={async () => {
                     try {
                       const res = await fetch('/api/clientes', {
@@ -284,6 +296,38 @@ export default function CarritoClient() {
                 </div>
               </div>
             )}
+          </div>
+
+          <div style={{ background: '#fff', padding: '1.5rem', borderRadius: '4px', border: '1px solid #eee', marginBottom: '1rem' }}>
+            <h3>Opciones de Entrega</h3>
+            <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                <input 
+                  type="radio" 
+                  name="tipoEntrega" 
+                  value="retiro" 
+                  checked={tipoEntrega === 'retiro'} 
+                  onChange={() => setTipoEntrega('retiro')} 
+                />
+                Retirar del local
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                <input 
+                  type="radio" 
+                  name="tipoEntrega" 
+                  value="envio" 
+                  checked={tipoEntrega === 'envio'} 
+                  onChange={() => setTipoEntrega('envio')} 
+                />
+                <span>
+                  Envío a domicilio 
+                  <br/>
+                  <span style={{ fontSize: '0.85em', color: '#666' }}>
+                    {cliente?.direccion ? `(${cliente.direccion})` : '(Sin dirección registrada)'}
+                  </span>
+                </span>
+              </label>
+            </div>
           </div>
 
           <button 

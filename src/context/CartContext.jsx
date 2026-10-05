@@ -7,6 +7,7 @@ const CartContext = createContext();
 export function CartProvider({ children }) {
   const [carrito, setCarrito] = useState([]);
   const [cliente, setCliente] = useState(null);
+  const [tipoEntrega, setTipoEntrega] = useState('retiro'); // 'retiro' | 'envio'
 
   const agregarAlCarrito = (articulo) => {
     setCarrito((prev) => {
@@ -33,7 +34,10 @@ export function CartProvider({ children }) {
     setCarrito([]);
   };
 
-  const total = carrito.reduce((acc, item) => acc + item.precio * item.cantidad, 0);
+  const subtotalProductos = carrito.reduce((acc, item) => acc + item.precio * item.cantidad, 0);
+  const costoEnvio = tipoEntrega === 'envio' && carrito.length > 0 ? 30000 + (subtotalProductos * 0.03) : 0;
+  const total = subtotalProductos + costoEnvio;
+  
   const totalArticulos = carrito.reduce((acc, item) => acc + item.cantidad, 0);
 
   return (
@@ -44,10 +48,14 @@ export function CartProvider({ children }) {
       modificarCantidad,
       eliminarDelCarrito,
       vaciarCarrito,
+      subtotalProductos,
+      costoEnvio,
       total,
       totalArticulos,
       cliente,
-      setCliente
+      setCliente,
+      tipoEntrega,
+      setTipoEntrega
     }}>
       {children}
     </CartContext.Provider>
