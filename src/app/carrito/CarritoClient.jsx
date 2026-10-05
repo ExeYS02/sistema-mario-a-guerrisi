@@ -30,6 +30,7 @@ export default function CarritoClient() {
   
   // Verification Modal State
   const [isVerifyModalOpen, setIsVerifyModalOpen] = useState(false);
+  const [verifyStep, setVerifyStep] = useState(1);
   const [pendingClient, setPendingClient] = useState(null);
   const [verifyCode, setVerifyCode] = useState(Array(6).fill(''));
 
@@ -78,6 +79,7 @@ export default function CarritoClient() {
         .then((data) => {
           if (data && data.cliente) {
             setPendingClient(data.cliente);
+            setVerifyStep(1);
             setIsVerifyModalOpen(true);
             setMostrarAlta(false);
           } else {
@@ -91,6 +93,13 @@ export default function CarritoClient() {
       setMostrarAlta(false);
     }
   }, [dniQuery, cliente, isVerifyModalOpen]);
+
+  const handleCloseVerifyModal = () => {
+    setIsVerifyModalOpen(false);
+    setVerifyStep(1);
+    setVerifyCode(Array(6).fill(''));
+    setDniQuery('');
+  };
 
   const handleVerifySubmit = () => {
     if (verifyCode.join('') === '123456') {
@@ -289,29 +298,47 @@ export default function CarritoClient() {
         </div>
       </div>
 
-      <Modal isOpen={isVerifyModalOpen} onClose={() => setIsVerifyModalOpen(false)} title="Confirmar identidad">
+      <Modal isOpen={isVerifyModalOpen} onClose={handleCloseVerifyModal} title="Confirmar identidad">
         <div style={{ padding: '1rem' }}>
-          <p style={{ marginBottom: '1rem' }}>
-            Para confirmar tu identidad, hemos enviado un codigo tu correo registrado 
-            (<strong>{pendingClient?.email || 'sin-correo@ejemplo.com'}</strong>). 
-            Por favor ingresalo debajo:
-          </p>
-          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', margin: '2rem 0' }}>
-            {verifyCode.map((digit, i) => (
-              <input
-                key={i}
-                id={`code-input-${i}`}
-                type="text"
-                maxLength={1}
-                value={digit}
-                onChange={(e) => handleVerifyCodeChange(i, e.target.value.replace(/\D/g, ''))}
-                style={{ width: '40px', height: '40px', fontSize: '1.5rem', textAlign: 'center', border: '1px solid #ccc', borderRadius: '4px' }}
-              />
-            ))}
-          </div>
-          <button type="button" className="btn btn-primary" style={{ width: '100%', padding: '0.75rem' }} onClick={handleVerifySubmit}>
-            Confirmar
-          </button>
+          {verifyStep === 1 ? (
+            <>
+              <p style={{ marginBottom: '1.5rem', fontSize: '1.1rem' }}>
+                ¿Deseas identificarte como <strong>{pendingClient?.razon_social}</strong>, DNI <strong>{pendingClient?.dni}</strong>?
+              </p>
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+                <button type="button" className="btn btn-outline" onClick={handleCloseVerifyModal}>
+                  Cancelar
+                </button>
+                <button type="button" className="btn btn-primary" onClick={() => setVerifyStep(2)}>
+                  Continuar
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p style={{ marginBottom: '1rem' }}>
+                Para confirmar tu identidad, hemos enviado un codigo a tu correo registrado 
+                (<strong>{pendingClient?.email || 'sin-correo@ejemplo.com'}</strong>). 
+                Por favor ingresalo debajo:
+              </p>
+              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', margin: '2rem 0' }}>
+                {verifyCode.map((digit, i) => (
+                  <input
+                    key={i}
+                    id={`code-input-${i}`}
+                    type="text"
+                    maxLength={1}
+                    value={digit}
+                    onChange={(e) => handleVerifyCodeChange(i, e.target.value.replace(/\D/g, ''))}
+                    style={{ width: '40px', height: '40px', fontSize: '1.5rem', textAlign: 'center', border: '1px solid #ccc', borderRadius: '4px' }}
+                  />
+                ))}
+              </div>
+              <button type="button" className="btn btn-primary" style={{ width: '100%', padding: '0.75rem' }} onClick={handleVerifySubmit}>
+                Confirmar
+              </button>
+            </>
+          )}
         </div>
       </Modal>
     </div>

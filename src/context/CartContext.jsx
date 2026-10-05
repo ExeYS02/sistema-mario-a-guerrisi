@@ -1,44 +1,12 @@
-'use client';
+﻿'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 
 const CartContext = createContext();
 
 export function CartProvider({ children }) {
   const [carrito, setCarrito] = useState([]);
   const [cliente, setCliente] = useState(null);
-  
-  // To prevent hydration mismatch, we load from localStorage after mount
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  useEffect(() => {
-    try {
-      const storedCart = localStorage.getItem('guerrisi_carrito');
-      if (storedCart) setCarrito(JSON.parse(storedCart));
-      
-      const storedClient = localStorage.getItem('guerrisi_cliente');
-      if (storedClient) setCliente(JSON.parse(storedClient));
-    } catch (err) {
-      console.error('Error loading cart from storage', err);
-    }
-    setIsLoaded(true);
-  }, []);
-
-  useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem('guerrisi_carrito', JSON.stringify(carrito));
-    }
-  }, [carrito, isLoaded]);
-  
-  useEffect(() => {
-    if (isLoaded) {
-      if (cliente) {
-        localStorage.setItem('guerrisi_cliente', JSON.stringify(cliente));
-      } else {
-        localStorage.removeItem('guerrisi_cliente');
-      }
-    }
-  }, [cliente, isLoaded]);
 
   const agregarAlCarrito = (articulo) => {
     setCarrito((prev) => {
