@@ -1,10 +1,20 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect, useRef } from 'react';
 import { obtenerCatalogo } from '@/services/catalogoService';
+import { useCart } from '@/context/CartContext';
+import Modal from '@/components/Modal';
 
 export default function CarritoClient() {
-  const [carrito, setCarrito] = useState([]);
+  const {
+    carrito,
+    agregarAlCarrito,
+    modificarCantidad,
+    eliminarDelCarrito,
+    total,
+    cliente,
+    setCliente
+  } = useCart();
   
   // Search state
   const [searchTerm, setSearchTerm] = useState('');
@@ -13,11 +23,15 @@ export default function CarritoClient() {
   const searchDebounceRef = useRef(null);
 
   // Client state
-  const [cliente, setCliente] = useState(null);
   const [dniQuery, setDniQuery] = useState('');
   const [clientLoading, setClientLoading] = useState(false);
   const [mostrarAlta, setMostrarAlta] = useState(false);
   const [nuevoCliente, setNuevoCliente] = useState({ razonSocial: '', dni: '', email: '', telefono: '', direccion: '' });
+  
+  // Verification Modal State
+  const [isVerifyModalOpen, setIsVerifyModalOpen] = useState(false);
+  const [pendingClient, setPendingClient] = useState(null);
+  const [verifyCode, setVerifyCode] = useState(Array(6).fill(''));
 
   // Handle product search
   useEffect(() => {
@@ -44,65 +58,61 @@ export default function CarritoClient() {
     return () => clearTimeout(searchDebounceRef.current);
   }, [searchTerm]);
 
-  const agregarAlCarrito = (articulo) => {
+  const onAgregar = (articulo) => {
     if (articulo.disponibilidad === 'sin_stock') {
       alert('Este artículo no tiene stock disponible.');
       return;
     }
-    setCarrito((prev) => {
-      const existe = prev.find((i) => i.id === articulo.id);
-      if (existe) {
-        return prev.map((i) => 
-          i.id === articulo.id 
-            ? { ...i, cantidad: i.cantidad + 1 } 
-            : i
-        );
-      }
-      return [...prev, { ...articulo, cantidad: 1 }];
-    });
+    agregarAlCarrito(articulo);
     setSearchTerm('');
     setSearchResults([]);
   };
 
-  const modificarCantidad = (id, cantidad) => {
-    if (cantidad < 1) return;
-    setCarrito((prev) => prev.map((i) => (i.id === id ? { ...i, cantidad } : i)));
-  };
-
-  const eliminarDelCarrito = (id) => {
-    setCarrito((prev) => prev.filter((i) => i.id !== id));
-  };
-
-  const total = carrito.reduce((acc, item) => acc + item.precio * item.cantidad, 0);
-
   // Handle client search
   useEffect(() => {
     const digitos = dniQuery.replace(/\D/g, '');
-    if (digitos.length === 8) {
-      // Buscar cliente
+    if (digitos.length === 8 && !cliente && !isVerifyModalOpen) {
       setClientLoading(true);
-      // Mocking fetch por ahora, luego se puede conectar al backend
       fetch(`/api/clientes?dni=${digitos}`)
         .then((r) => r.ok ? r.json() : null)
         .then((data) => {
           if (data && data.cliente) {
-            setCliente(data.cliente);
+            setPendingClient(data.cliente);
+            setIsVerifyModalOpen(true);
             setMostrarAlta(false);
           } else {
-            setCliente(null);
-            setMostrarAlta(true); // No se encontró, ofrecer alta
+            setMostrarAlta(true);
             setNuevoCliente(prev => ({ ...prev, dni: digitos }));
           }
         })
-        .catch(() => {
-          setMostrarAlta(true);
-        })
+        .catch(() => setMostrarAlta(true))
         .finally(() => setClientLoading(false));
-    } else {
-      setCliente(null);
+    } else if (digitos.length < 8) {
       setMostrarAlta(false);
     }
-  }, [dniQuery]);
+  }, [dniQuery, cliente, isVerifyModalOpen]);
+
+  const handleVerifySubmit = () => {
+    if (verifyCode.join('') === '123456') {
+      setCliente(pendingClient);
+      setIsVerifyModalOpen(false);
+      setVerifyCode(Array(6).fill(''));
+      setDniQuery('');
+    } else {
+      alert('Código incorrecto. Intente nuevamente (el código es 123456).');
+    }
+  };
+
+  const handleVerifyCodeChange = (index, value) => {
+    if (value.length > 1) value = value.slice(-1);
+    const newCode = [...verifyCode];
+    newCode[index] = value;
+    setVerifyCode(newCode);
+    
+    if (value && index < 5) {
+      document.getElementById('code-input-' + (index + 1))?.focus();
+    }
+  };
 
   const handlePago = () => {
     alert('Continuar con el pago... (Funcionalidad pendiente)');
@@ -132,7 +142,7 @@ export default function CarritoClient() {
                   <div 
                     key={res.id} 
                     style={{ padding: '0.5rem', borderBottom: '1px solid #eee', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
-                    onClick={() => agregarAlCarrito(res)}
+                    onClick={() => onAgregar(res)}
                   >
                     <div>
                       <strong>{res.descripcion}</strong>
@@ -198,27 +208,33 @@ export default function CarritoClient() {
         <div style={{ flex: '1 1 30%', minWidth: '300px' }}>
           <div style={{ background: '#fff', padding: '1.5rem', borderRadius: '4px', border: '1px solid #eee', marginBottom: '1rem' }}>
             <h3>Información del Cliente</h3>
-            <div style={{ marginTop: '1rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem' }}>DNI (8 dígitos)</label>
-              <input
-                type="text"
-                placeholder="Ingresar DNI..."
-                value={dniQuery}
-                maxLength={8}
-                onChange={(e) => setDniQuery(e.target.value.replace(/\D/g, ''))}
-                style={{ width: '100%', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
-              />
-              {clientLoading && <div style={{ marginTop: '0.5rem', fontSize: '0.85em', color: '#666' }}>Buscando cliente...</div>}
-            </div>
+            
+            {!cliente && (
+              <div style={{ marginTop: '1rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem' }}>DNI (8 dígitos)</label>
+                <input
+                  type="text"
+                  placeholder="Ingresar DNI..."
+                  value={dniQuery}
+                  maxLength={8}
+                  onChange={(e) => setDniQuery(e.target.value.replace(/\D/g, ''))}
+                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' }}
+                />
+                {clientLoading && <div style={{ marginTop: '0.5rem', fontSize: '0.85em', color: '#666' }}>Buscando cliente...</div>}
+              </div>
+            )}
 
             {cliente && (
               <div style={{ marginTop: '1rem', padding: '1rem', background: '#f9fafb', borderRadius: '4px', border: '1px solid #e5e7eb' }}>
                 <strong>{cliente.razon_social}</strong>
-                <div style={{ fontSize: '0.85em', color: '#4b5563', marginTop: '0.25rem' }}>
+                <div style={{ fontSize: '0.85em', color: '#4b5563', marginTop: '0.25rem', marginBottom: '1rem' }}>
                   <div>DNI: {cliente.dni}</div>
                   {cliente.email && <div>Email: {cliente.email}</div>}
                   {cliente.telefono && <div>Tel: {cliente.telefono}</div>}
                 </div>
+                <button type="button" className="btn btn-outline" style={{ width: '100%', padding: '0.5rem' }} onClick={() => setCliente(null)}>
+                  Cambiar cliente
+                </button>
               </div>
             )}
 
@@ -272,6 +288,32 @@ export default function CarritoClient() {
           </button>
         </div>
       </div>
+
+      <Modal isOpen={isVerifyModalOpen} onClose={() => setIsVerifyModalOpen(false)} title="Confirmar identidad">
+        <div style={{ padding: '1rem' }}>
+          <p style={{ marginBottom: '1rem' }}>
+            Para confirmar tu identidad, hemos enviado un codigo tu correo registrado 
+            (<strong>{pendingClient?.email || 'sin-correo@ejemplo.com'}</strong>). 
+            Por favor ingresalo debajo:
+          </p>
+          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', margin: '2rem 0' }}>
+            {verifyCode.map((digit, i) => (
+              <input
+                key={i}
+                id={`code-input-${i}`}
+                type="text"
+                maxLength={1}
+                value={digit}
+                onChange={(e) => handleVerifyCodeChange(i, e.target.value.replace(/\D/g, ''))}
+                style={{ width: '40px', height: '40px', fontSize: '1.5rem', textAlign: 'center', border: '1px solid #ccc', borderRadius: '4px' }}
+              />
+            ))}
+          </div>
+          <button type="button" className="btn btn-primary" style={{ width: '100%', padding: '0.75rem' }} onClick={handleVerifySubmit}>
+            Confirmar
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }

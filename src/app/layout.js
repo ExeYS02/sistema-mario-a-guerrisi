@@ -22,14 +22,18 @@ export const viewport = {
   themeColor: '#E33141',
 };
 
+import { CartProvider } from '@/context/CartContext';
+
 export default function RootLayout({ children }) {
   return (
     <html lang="es-AR">
       <body className="store-body">
-        <StoreHeader />
-        <main className="store-main">{children}</main>
-        <StoreFooter />
-        <RegistrarSW />
+        <CartProvider>
+          <StoreHeader />
+          <main className="store-main">{children}</main>
+          <StoreFooter />
+          <RegistrarSW />
+        </CartProvider>
       </body>
     </html>
   );

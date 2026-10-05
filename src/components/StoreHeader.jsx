@@ -1,12 +1,14 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useCart } from '@/context/CartContext';
 
 // Header de la tienda (patrón del design system: marca a la izquierda, navegación a la derecha).
 export default function StoreHeader() {
   const pathname = usePathname();
   const enCatalogo = pathname?.startsWith('/catalogo');
+  const { totalArticulos, total } = useCart();
 
   return (
     <header className="store-header">
@@ -25,10 +27,18 @@ export default function StoreHeader() {
           </span>
         </Link>
 
-        <nav className="store-nav" aria-label="Principal">
-          <Link href="/carrito" className={`store-nav-link ${pathname?.startsWith('/carrito') ? 'active' : ''}`} aria-current={pathname?.startsWith('/carrito') ? 'page' : undefined}>
-            Carrito de compras
-          </Link>
+        <nav className="store-nav" aria-label="Principal" style={{ alignItems: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginRight: '1rem' }}>
+            <Link href="/carrito" className={`store-nav-link ${pathname?.startsWith('/carrito') ? 'active' : ''}`} aria-current={pathname?.startsWith('/carrito') ? 'page' : undefined} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              Carrito de compras
+              {totalArticulos > 0 && <span style={{ fontSize: '0.9em' }}>({totalArticulos})</span>}
+            </Link>
+            {totalArticulos > 0 && (
+              <span style={{ fontSize: '0.75em', color: '#666', marginTop: '-4px' }}>
+                Total: ${total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+              </span>
+            )}
+          </div>
           <Link href="/catalogo" className={`store-nav-link ${enCatalogo ? 'active' : ''}`} aria-current={enCatalogo ? 'page' : undefined}>
             Catálogo
           </Link>
