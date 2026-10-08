@@ -1,4 +1,4 @@
-﻿# Implementación del Carrito de Compras - Walkthrough
+# Implementación del Carrito de Compras - Walkthrough
 
 Se completó la creación del carrito de compras adaptado a la experiencia de un e-commerce, incluyendo el persistido de datos globales, la validación de clientes en dos pasos, la lógica de cálculo de envíos a domicilio y finalmente la integración de la **Pasarela de Pagos (Mercado Pago)**.
 
@@ -42,3 +42,8 @@ Se completó la creación del carrito de compras adaptado a la experiencia de un
 
 ### 6. Módulo de Cliente y APIs
 - Rutas del servidor `GET` y `POST` en `/api/clientes/route.js` para buscar clientes en Supabase y registrar perfiles temporales si no existen, preparándolo para el checkout final.
+
+## Actualización HU-34 / clientes
+- `/api/checkout` ya **no** crea la venta con inserts sueltos: llama a la función SQL `crear_venta_web` (validación de stock + reserva + venta/detalle/envío en una transacción). Los precios y el envío se recalculan en la base.
+- El webhook ya **no** descuenta stock a mano: usa `confirmar_venta_web` (idempotente) y `cancelar_venta_web` (libera la reserva). Ver `docs/database/migracion_hu34_reserva_web.sql`.
+- `/api/clientes` suma `PUT` (modificar nombre, email, teléfono y dirección de un cliente ya registrado) y el alta devuelve `409` si el DNI ya existe.

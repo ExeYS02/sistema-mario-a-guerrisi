@@ -1,6 +1,7 @@
-﻿'use client';
+'use client';
 
 import React, { createContext, useContext, useState } from 'react';
+import { calcularCostoEnvio } from '@/utils/envio';
 
 const CartContext = createContext();
 
@@ -35,7 +36,7 @@ export function CartProvider({ children }) {
   };
 
   const subtotalProductos = carrito.reduce((acc, item) => acc + item.precio * item.cantidad, 0);
-  const costoEnvio = tipoEntrega === 'envio' && carrito.length > 0 ? 30000 + (subtotalProductos * 0.03) : 0;
+  const costoEnvio = tipoEntrega === 'envio' && carrito.length > 0 ? calcularCostoEnvio(subtotalProductos) : 0;
   const total = subtotalProductos + costoEnvio;
   
   const totalArticulos = carrito.reduce((acc, item) => acc + item.cantidad, 0);

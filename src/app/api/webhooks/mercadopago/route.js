@@ -1,16 +1,23 @@
-﻿import { NextResponse } from 'next/server';
-import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { NextResponse } from 'next/server';
 import { MercadoPagoConfig, Payment } from 'mercadopago';
+import { esUuid } from '@/server/services/catalogoService';
+import { cancelarVentaWeb, confirmarVentaWeb } from '@/server/services/checkoutService';
 
 export const dynamic = 'force-dynamic';
 
+// Resultados de confirmar_venta_web que requieren intervención manual (reembolso/revisión).
+const REQUIEREN_REVISION = new Set(['sin_stock_reembolsar', 'cancelada_reembolsar', 'monto_no_coincide']);
+
+// Webhook de Mercado Pago (HU-35). Mercado Pago puede notificar varias veces el mismo
+// pago, por eso todo el efecto sobre la venta ocurre en funciones SQL idempotentes.
+// El estado del pago nunca se toma del cuerpo de la notificación: se consulta a la API
+// de Mercado Pago con el id recibido, así una notificación falsa no puede aprobar nada.
 export async function POST(request) {
   try {
     const url = new URL(request.url);
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
 
-    // Extraer datos del webhook (el formato puede variar según si es topic o type)
-    let paymentId = body?.data?.id || url.searchParams.get('data.id') || url.searchParams.get('id');
+    const paymentId = body?.data?.id || url.searchParams.get('data.id') || url.searchParams.get('id');
     const topic = body?.type || body?.topic || url.searchParams.get('topic') || url.searchParams.get('type');
 
     if (topic !== 'payment' || !paymentId) {
@@ -18,79 +25,31 @@ export async function POST(request) {
     }
 
     const client = new MercadoPagoConfig({ accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN });
-    const payment = new Payment(client);
-    
-    const paymentData = await payment.get({ id: paymentId });
+    const paymentData = await new Payment(client).get({ id: paymentId });
     const ventaId = paymentData.external_reference;
     const status = paymentData.status;
 
-    if (!ventaId) {
-      return new NextResponse('Sin external_reference', { status: 200 });
-    }
-
-    const db = getSupabaseAdmin();
-
-    // Idempotencia: Verificar estado actual de la venta
-    const { data: ventaActual, error: errVenta } = await db
-      .from('ventas')
-      .select('id, estado')
-      .eq('id', ventaId)
-      .single();
-
-    if (errVenta || !ventaActual) {
-      console.error('Venta no encontrada para webhook:', ventaId);
-      return new NextResponse('Venta no encontrada', { status: 404 });
-    }
-
-    if (ventaActual.estado === 'Confirmada') {
-      // Ya fue procesado previamente
-      return new NextResponse('Ya procesado', { status: 200 });
+    if (!esUuid(ventaId)) {
+      return new NextResponse('Sin external_reference válido', { status: 200 });
     }
 
     if (status === 'approved') {
-      // 1. Actualizar estado a Confirmada
-      await db.from('ventas').update({ estado: 'Confirmada' }).eq('id', ventaId);
-
-      // 2. Descontar Stock
-      const { data: detalles } = await db.from('ventas_detalle').select('articulo_id, cantidad').eq('venta_id', ventaId);
-      
-      if (detalles && detalles.length > 0) {
-        for (const det of detalles) {
-          // Buscar existencias de este artículo en todos los depósitos
-          const { data: exist } = await db
-            .from('existencias')
-            .select('id_art_x_dep, cantidad, cantidad_reservada')
-            .eq('articulo_id', det.articulo_id)
-            .order('cantidad', { ascending: false });
-
-          if (exist && exist.length > 0) {
-            // Descontar del depósito con más stock (el primero de la lista ordenada)
-            const objetivo = exist[0];
-            const nuevaCantidad = Math.max(0, objetivo.cantidad - det.cantidad);
-            await db.from('existencias')
-              .update({ cantidad: nuevaCantidad })
-              .eq('id_art_x_dep', objetivo.id_art_x_dep);
-          }
-        }
+      const resultado = await confirmarVentaWeb(ventaId, Number(paymentData.transaction_amount));
+      if (REQUIEREN_REVISION.has(resultado)) {
+        console.error(`[webhook MP] REQUIERE REVISIÓN MANUAL: venta ${ventaId}, pago ${paymentId} → ${resultado}`);
+      } else if (resultado === 'no_existe') {
+        console.error('[webhook MP] Venta inexistente para el pago', paymentId, ventaId);
       }
-
-      // 3. Registrar Pago en pagos_venta
-      await db.from('pagos_venta').insert({
-        venta_id: ventaId,
-        metodo: 'Mercado Pago',
-        monto: paymentData.transaction_amount
-      });
-
     } else if (status === 'rejected' || status === 'cancelled') {
-      // Si se rechaza, cancelamos la venta. No se toca el stock.
-      await db.from('ventas').update({ estado: 'Cancelada', motivo_cancelacion: 'Pago rechazado por Mercado Pago' }).eq('id', ventaId);
-      await db.from('envios').update({ estado: 'Cancelado' }).eq('venta_id', ventaId);
+      // Se libera la reserva. No se descuenta stock real.
+      await cancelarVentaWeb(ventaId, 'Pago rechazado por Mercado Pago');
     }
+    // pending / in_process / authorized: la reserva sigue vigente hasta que venza.
 
     return new NextResponse('OK', { status: 200 });
-
   } catch (err) {
     console.error('[POST /api/webhooks/mercadopago]', err);
+    // 500 => Mercado Pago reintenta (es seguro: las funciones son idempotentes).
     return new NextResponse('Error', { status: 500 });
   }
 }

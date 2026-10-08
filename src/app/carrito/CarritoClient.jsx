@@ -1,13 +1,15 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect, useRef } from 'react';
 import { obtenerCatalogo } from '@/services/catalogoService';
 import { useCart } from '@/context/CartContext';
 import Modal from '@/components/Modal';
+import { validarDatosCliente } from '@/utils/validacionCliente';
 
 export default function CarritoClient() {
   const {
     carrito,
+    setCarrito,
     agregarAlCarrito,
     modificarCantidad,
     eliminarDelCarrito,
@@ -41,6 +43,14 @@ export default function CarritoClient() {
   // Payment Modal State
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isPaying, setIsPaying] = useState(false);
+  // Error del checkout (stock insuficiente, precios actualizados, etc.)
+  const [checkoutError, setCheckoutError] = useState(null); // { mensaje, faltantes? }
+
+  // Edición de datos del cliente identificado
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({ razon_social: '', email: '', telefono: '', direccion: '' });
+  const [editErrors, setEditErrors] = useState({});
+  const [editSaving, setEditSaving] = useState(false);
 
   // Handle product search
   useEffect(() => {
@@ -131,42 +141,106 @@ export default function CarritoClient() {
     }
   };
 
+  const abrirEdicion = () => {
+    setEditForm({
+      razon_social: cliente?.razon_social || '',
+      email: cliente?.email || '',
+      telefono: cliente?.telefono || '',
+      direccion: cliente?.direccion || '',
+    });
+    setEditErrors({});
+    setIsEditOpen(true);
+  };
+
+  const guardarEdicion = async () => {
+    const { valores, errores } = validarDatosCliente(editForm);
+    if (Object.keys(errores).length > 0) {
+      setEditErrors(errores);
+      return;
+    }
+    setEditSaving(true);
+    setEditErrors({});
+    try {
+      const res = await fetch('/api/clientes', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: cliente.id, dni: cliente.dni, ...valores }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.cliente) {
+        setCliente(data.cliente);
+        setIsEditOpen(false);
+      } else {
+        setEditErrors(data.errores || { general: data.error || 'No pudimos guardar los cambios.' });
+      }
+    } catch (err) {
+      console.error(err);
+      setEditErrors({ general: 'Error de conexión. Intentá nuevamente.' });
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   const handlePagoClick = () => {
     if (!cliente) {
       alert('Por favor, identifíquese como cliente primero.');
       return;
     }
+    if (tipoEntrega === 'envio' && !cliente.direccion) {
+      alert('Para el envío a domicilio necesitamos tu dirección. Completala para continuar.');
+      abrirEdicion();
+      return;
+    }
+    setCheckoutError(null);
     setIsPaymentModalOpen(true);
+  };
+
+  // Quita del carrito lo que no hay y baja al máximo disponible lo que alcanza parcialmente.
+  const ajustarAlStock = () => {
+    const disponibles = new Map((checkoutError?.faltantes || []).map((f) => [f.articulo_id, f.disponible]));
+    setCarrito((prev) =>
+      prev.flatMap((i) => {
+        if (!disponibles.has(i.id)) return [i];
+        const max = disponibles.get(i.id);
+        return max > 0 ? [{ ...i, cantidad: Math.min(i.cantidad, max) }] : [];
+      })
+    );
+    setCheckoutError(null);
+    setIsPaymentModalOpen(false);
   };
 
   const handleIniciarPago = async () => {
     setIsPaying(true);
+    setCheckoutError(null);
     try {
-      const payload = {
-        carrito,
-        cliente,
-        tipoEntrega,
-        total,
-        subtotalProductos,
-        costoEnvio
-      };
+      // El servidor recalcula precios y envío; solo se envía lo necesario más el
+      // total que ve el cliente, para detectar si cambió algún precio.
       const res = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ carrito, cliente, tipoEntrega, total })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+
       if (res.ok && data.init_point) {
-        window.location.href = data.init_point;
+        window.location.href = data.init_point; // se mantiene "Iniciando..." mientras redirige
+        return;
+      }
+
+      if (res.status === 409 && data.codigo === 'STOCK_INSUFICIENTE') {
+        setCheckoutError({ mensaje: data.error, faltantes: data.faltantes });
+      } else if (res.status === 409 && data.codigo === 'PRECIOS_ACTUALIZADOS') {
+        const nuevos = new Map((data.items || []).map((it) => [it.articulo_id, Number(it.precio_unitario)]));
+        setCarrito((prev) => prev.map((i) => (nuevos.has(i.id) ? { ...i, precio: nuevos.get(i.id) } : i)));
+        setCheckoutError({ mensaje: data.error });
       } else {
-        alert('Error al iniciar el pago: ' + (data.error || 'Error desconocido'));
-        setIsPaying(false);
+        setCheckoutError({ mensaje: data.error || 'Error desconocido al iniciar el pago.' });
       }
     } catch (err) {
       console.error(err);
-      alert('Error de conexión al procesar el pago.');
-      setIsPaying(false);
+      setCheckoutError({ mensaje: 'Error de conexión al procesar el pago.' });
     }
+    setIsPaying(false);
   };
 
   return (
@@ -290,9 +364,14 @@ export default function CarritoClient() {
                   {cliente.telefono && <div>Tel: {cliente.telefono}</div>}
                   {cliente.direccion && <div>Dirección: {cliente.direccion}</div>}
                 </div>
-                <button type="button" className="btn btn-outline" style={{ width: '100%', padding: '0.5rem' }} onClick={() => setCliente(null)}>
-                  Cambiar cliente
-                </button>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button type="button" className="btn btn-outline" style={{ flex: 1, padding: '0.5rem' }} onClick={abrirEdicion}>
+                    Modificar mis datos
+                  </button>
+                  <button type="button" className="btn btn-outline" style={{ flex: 1, padding: '0.5rem' }} onClick={() => setCliente(null)}>
+                    Cambiar cliente
+                  </button>
+                </div>
               </div>
             )}
 
@@ -365,6 +444,11 @@ export default function CarritoClient() {
                   </span>
                 </span>
               </label>
+              {cliente && !cliente.direccion && (
+                <button type="button" className="btn btn-outline" style={{ padding: '0.4rem', fontSize: '0.9em' }} onClick={abrirEdicion}>
+                  Agregar dirección
+                </button>
+              )}
             </div>
           </div>
 
@@ -426,15 +510,91 @@ export default function CarritoClient() {
 
       <Modal isOpen={isPaymentModalOpen} onClose={() => !isPaying && setIsPaymentModalOpen(false)} title="Confirmar Pago">
         <div style={{ padding: '1rem' }}>
-          <p style={{ marginBottom: '1.5rem', fontSize: '1.1rem' }}>
-            Está por iniciar la instancia de pago de Mercado Pago por un total de <strong>${total.toLocaleString('es-AR')}</strong>. ¿Desea continuar?
-          </p>
-          <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
-            <button type="button" className="btn btn-outline" onClick={() => setIsPaymentModalOpen(false)} disabled={isPaying}>
-              Volver
+          {checkoutError ? (
+            <>
+              <p style={{ marginBottom: '1rem', fontSize: '1.1rem', color: '#b91c1c' }}>
+                <strong>{checkoutError.mensaje}</strong>
+              </p>
+              {checkoutError.faltantes?.length > 0 && (
+                <ul style={{ margin: '0 0 1.5rem 1.25rem' }}>
+                  {checkoutError.faltantes.map((f) => {
+                    const nombre = f.descripcion || carrito.find((i) => i.id === f.articulo_id)?.descripcion || 'Artículo';
+                    return (
+                      <li key={f.articulo_id} style={{ marginBottom: '0.25rem' }}>
+                        <strong>{nombre}</strong>:{' '}
+                        {f.disponible > 0
+                          ? `pediste ${f.solicitado} y solo quedan ${f.disponible}.`
+                          : 'ya no está disponible.'}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                <button type="button" className="btn btn-outline" onClick={() => setIsPaymentModalOpen(false)}>
+                  Volver al carrito
+                </button>
+                {checkoutError.faltantes?.length > 0 ? (
+                  <button type="button" className="btn btn-primary" onClick={ajustarAlStock}>
+                    Ajustar al stock disponible
+                  </button>
+                ) : (
+                  <button type="button" className="btn btn-primary" onClick={handleIniciarPago} disabled={isPaying}>
+                    {isPaying ? 'Iniciando...' : 'Confirmar y pagar'}
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <p style={{ marginBottom: '1.5rem', fontSize: '1.1rem' }}>
+                Está por iniciar la instancia de pago de Mercado Pago por un total de <strong>${total.toLocaleString('es-AR')}</strong>.
+                Reservaremos tus productos por 10 minutos mientras completás el pago. ¿Desea continuar?
+              </p>
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+                <button type="button" className="btn btn-outline" onClick={() => setIsPaymentModalOpen(false)} disabled={isPaying}>
+                  Volver
+                </button>
+                <button type="button" className="btn btn-primary" onClick={handleIniciarPago} disabled={isPaying}>
+                  {isPaying ? 'Iniciando...' : 'Sí'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
+
+      <Modal isOpen={isEditOpen} onClose={() => !editSaving && setIsEditOpen(false)} title="Modificar mis datos">
+        <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <div style={{ fontSize: '0.9em', color: '#4b5563' }}>
+            DNI: <strong>{cliente?.dni}</strong> (el DNI no se puede modificar)
+          </div>
+          {[
+            { campo: 'razon_social', label: 'Nombre completo', type: 'text', autoComplete: 'name' },
+            { campo: 'email', label: 'Email', type: 'email', autoComplete: 'email' },
+            { campo: 'telefono', label: 'Teléfono', type: 'tel', autoComplete: 'tel' },
+            { campo: 'direccion', label: 'Dirección de entrega', type: 'text', autoComplete: 'street-address' },
+          ].map(({ campo, label, type, autoComplete }) => (
+            <label key={campo} style={{ display: 'block' }}>
+              <span style={{ display: 'block', marginBottom: '0.25rem' }}>{label}</span>
+              <input
+                type={type}
+                autoComplete={autoComplete}
+                value={editForm[campo]}
+                onChange={(e) => setEditForm({ ...editForm, [campo]: e.target.value })}
+                disabled={editSaving}
+                style={{ width: '100%', padding: '0.5rem', border: `1px solid ${editErrors[campo] ? '#b91c1c' : '#ccc'}`, borderRadius: '4px' }}
+              />
+              {editErrors[campo] && <span style={{ color: '#b91c1c', fontSize: '0.85em' }}>{editErrors[campo]}</span>}
+            </label>
+          ))}
+          {editErrors.general && <div style={{ color: '#b91c1c' }}>{editErrors.general}</div>}
+          <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+            <button type="button" className="btn btn-outline" onClick={() => setIsEditOpen(false)} disabled={editSaving}>
+              Cancelar
             </button>
-            <button type="button" className="btn btn-primary" onClick={handleIniciarPago} disabled={isPaying}>
-              {isPaying ? 'Iniciando...' : 'Sí'}
+            <button type="button" className="btn btn-primary" onClick={guardarEdicion} disabled={editSaving}>
+              {editSaving ? 'Guardando...' : 'Guardar cambios'}
             </button>
           </div>
         </div>
