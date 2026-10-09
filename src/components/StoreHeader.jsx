@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -52,8 +52,18 @@ export default function StoreHeader() {
           >
             Catálogo
           </Link>
+          <Link 
+            href="/envios" 
+            className={`store-nav-link ${pathname?.startsWith('/envios') ? 'active' : ''}`} 
+            aria-current={pathname?.startsWith('/envios') ? 'page' : undefined}
+          >
+            Tus envíos
+          </Link>
         </nav>
       </div>
     </header>
   );
 }
+
+
+

@@ -43,6 +43,12 @@ Se completó la creación del carrito de compras adaptado a la experiencia de un
 ### 6. Módulo de Cliente y APIs
 - Rutas del servidor `GET` y `POST` en `/api/clientes/route.js` para buscar clientes en Supabase y registrar perfiles temporales si no existen, preparándolo para el checkout final.
 
+### 7. Módulo "Tus Envíos"
+- Se agregó una nueva sección en la navegación principal ("Tus envíos") para que los clientes puedan consultar el estado de sus pedidos de manera autogestionada.
+- Se implementó la lógica de validación de identidad (DNI + Código estático `123456`) adaptando la estructura del `<Modal />` estándar del sistema de diseño, manteniendo la identidad del cliente sincronizada globalmente a través del `CartContext`.
+- Se desarrolló el endpoint `GET /api/envios/route.js` que recupera el historial de envíos desde Supabase, realizando relaciones (joins) con las tablas `ventas` (para extraer el número de comprobante y estado) y `envios_detalle` (para listar artículos comprados).
+- La interfaz visual (`/envios`) despliega los datos en tarjetas informativas claras, incluyendo estados, comprobantes, detalle de productos y cálculo automático de la fecha esperada de entrega o de retiro.
+
 ## Actualización HU-34 / clientes
 - `/api/checkout` ya **no** crea la venta con inserts sueltos: llama a la función SQL `crear_venta_web` (validación de stock + reserva + venta/detalle/envío en una transacción). Los precios y el envío se recalculan en la base.
 - El webhook ya **no** descuenta stock a mano: usa `confirmar_venta_web` (idempotente) y `cancelar_venta_web` (libera la reserva). Ver `docs/database/migracion_hu34_reserva_web.sql`.
