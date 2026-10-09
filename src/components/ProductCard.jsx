@@ -18,7 +18,6 @@ export default function ProductCard({ articulo, onAgregar }) {
     <article className="product-card">
       <div className="product-thumb">
         {articulo.categoria && <span className="thumb-tag">{articulo.categoria}</span>}
-        <span className="thumb-code">{articulo.codigoInterno}</span>
         <AutoProductImage query={consultaImagen} alt={`${articulo.marca} ${titulo}`} />
       </div>
       <div className="product-body">
