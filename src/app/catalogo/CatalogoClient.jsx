@@ -1,194 +1,361 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import Modal from '@/components/Modal';
-import ProductCard, { ProductCardSkeleton } from '@/components/ProductCard';
-import Paginacion from '@/components/Paginacion';
-import { SelectCampo, OPCIONES_ORDEN } from '@/components/CatalogoFiltros';
-import { useCatalogo, useEnLinea } from '@/hooks/useCatalogo';
+import { useState, useEffect, useTransition } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useCatalogo } from '@/hooks/useCatalogo';
 import { useDebounce } from '@/hooks/useDebounce';
 import { obtenerFiltrosCatalogo } from '@/services/catalogoService';
+import ProductCard, { ProductCardSkeleton } from '@/components/ProductCard';
+import Paginacion from '@/components/Paginacion';
+import Modal from '@/components/Modal';
+import CatalogoSidebar from '@/components/CatalogoSidebar';
+import { SelectCampo, OPCIONES_ORDEN } from '@/components/CatalogoFiltros';
 
-const ORDENES = OPCIONES_ORDEN.map((o) => o.valor);
+function formatearHora(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+}
 
 export default function CatalogoClient() {
   const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
-  const enLinea = useEnLinea();
+  const [, startTransition] = useTransition();
 
-  // ---- Estado en la URL (se puede compartir, y "atrás" funciona) ----
-  const qUrl = searchParams.get('q') ?? '';
-  const params = useMemo(() => {
-    const orden = searchParams.get('orden');
-    return {
-      q: searchParams.get('q') ?? '',
-      categoria: searchParams.get('categoria') ?? '',
-      marca: searchParams.get('marca') ?? '',
-      pais: searchParams.get('pais') ?? '',
-      orden: ORDENES.includes(orden) ? orden : 'novedades',
-      pagina: Math.max(parseInt(searchParams.get('pagina') ?? '1', 10) || 1, 1),
-    };
-  }, [searchParams]);
+  // Parámetros de la URL
+  const qParam = searchParams.get('q') || '';
+  const catParam = searchParams.get('categoria') || '';
+  const marcaParam = searchParams.get('marca') || '';
+  const paisParam = searchParams.get('pais') || '';
+  const stockParam = searchParams.get('stock') || 'con';
+  const ordenParam = searchParams.get('orden') || 'novedades';
+  const paginaParam = Number(searchParams.get('pagina')) || 1;
 
-  const actualizar = (cambios, { push = false } = {}) => {
-    const sp = new URLSearchParams(searchParams.toString());
-    Object.entries(cambios).forEach(([k, v]) => (v ? sp.set(k, v) : sp.delete(k)));
-    if (!('pagina' in cambios)) sp.delete('pagina'); // al cambiar filtros se vuelve a la página 1
-    const url = sp.toString() ? `${pathname}?${sp}` : pathname;
-    (push ? router.push : router.replace)(url, { scroll: push });
-  };
+  // Búsqueda local con debounce
+  const [busqueda, setBusqueda] = useState(qParam);
+  const busquedaDebounced = useDebounce(busqueda, 300);
 
-  // ---- Búsqueda con debounce (menos pedidos, resultados más rápidos) ----
-  const [texto, setTexto] = useState(qUrl);
-  const textoDebounced = useDebounce(texto, 300);
-  const ultimoQ = useRef(qUrl);
-  useEffect(() => {
-    if (textoDebounced.trim() === ultimoQ.current) return;
-    ultimoQ.current = textoDebounced.trim();
-    actualizar({ q: textoDebounced.trim() });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textoDebounced]);
-  // Si la URL cambia desde afuera (botón "atrás", limpiar filtros), se refleja en el input
-  useEffect(() => {
-    if (qUrl !== ultimoQ.current) { ultimoQ.current = qUrl; setTexto(qUrl); }
-  }, [qUrl]);
+  // Vista Grilla/Lista
+  const [vista, setVista] = useState('grilla');
 
-  // ---- Datos ----
-  const { items, total, totalPaginas, actualizadoEn, cargando, error, recargar } = useCatalogo(params);
+  // Modal para móviles
+  const [modalFiltrosAbierto, setModalFiltrosAbierto] = useState(false);
+
+  // Maestros
   const [maestros, setMaestros] = useState({ categorias: [], marcas: [], paises: [] });
+
   useEffect(() => {
-    obtenerFiltrosCatalogo().then(setMaestros).catch(() => {});
+    let cancelado = false;
+    obtenerFiltrosCatalogo()
+      .then((data) => {
+        if (!cancelado) setMaestros(data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelado = true;
+    };
   }, []);
 
-  // ---- UI ----
-  const [vista, setVista] = useState('grilla');
-  const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
-  const filtrosActivos = [params.marca, params.pais, params.categoria].filter(Boolean).length;
-  const hayFiltros = filtrosActivos > 0 || params.q || params.orden !== 'novedades';
+  // Sincronizar input local si la URL cambia por navegación (ej. botón atrás)
+  useEffect(() => {
+    setBusqueda(qParam);
+  }, [qParam]);
 
-  const limpiar = () => { setTexto(''); ultimoQ.current = ''; router.replace(pathname, { scroll: false }); };
-  const horaAct = actualizadoEn ? new Date(actualizadoEn).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) : '';
+  // Actualizador central de URL
+  const actualizarUrl = (nuevosParams) => {
+    const params = new URLSearchParams(searchParams.toString());
 
-  const selectores = (
-    <>
-      <SelectCampo etiqueta="Marca" valor={params.marca} onChange={(v) => actualizar({ marca: v })} opciones={maestros.marcas} />
-      <SelectCampo etiqueta="Origen" valor={params.pais} onChange={(v) => actualizar({ pais: v })} opciones={maestros.paises} />
-      <SelectCampo etiqueta="Ordenar" valor={params.orden} onChange={(v) => actualizar({ orden: v === 'novedades' ? '' : v })} opciones={OPCIONES_ORDEN} todas={null} />
-    </>
-  );
+    Object.entries(nuevosParams).forEach(([clave, valor]) => {
+      if (valor === '' || valor === null || valor === undefined) {
+        params.delete(clave);
+      } else if (clave === 'stock' && valor === 'con') {
+        params.delete('stock');
+      } else if (clave === 'orden' && valor === 'novedades') {
+        params.delete('orden');
+      } else if (clave === 'pagina' && Number(valor) <= 1) {
+        params.delete('pagina');
+      } else {
+        params.set(clave, String(valor));
+      }
+    });
+
+    const queryString = params.toString();
+    const nuevaUrl = queryString ? `/catalogo?${queryString}` : '/catalogo';
+
+    startTransition(() => {
+      router.push(nuevaUrl, { scroll: false });
+    });
+  };
+
+  // Disparar búsqueda con debounce
+  useEffect(() => {
+    if (busquedaDebounced !== qParam) {
+      actualizarUrl({ q: busquedaDebounced, pagina: 1 });
+    }
+  }, [busquedaDebounced]);
+
+  const queryCatalogo = {
+    q: qParam,
+    categoria: catParam,
+    marca: marcaParam,
+    pais: paisParam,
+    stock: stockParam,
+    orden: ordenParam,
+    pagina: paginaParam,
+  };
+
+  const { items, total, pagina, totalPaginas, actualizadoEn, cargando, error, recargar } =
+    useCatalogo(queryCatalogo);
+
+  const hayFiltrosActivos =
+    Boolean(qParam) ||
+    Boolean(catParam) ||
+    Boolean(marcaParam) ||
+    Boolean(paisParam) ||
+    (stockParam && stockParam !== 'con');
+
+  const contadorFiltrosActivos =
+    (catParam ? 1 : 0) +
+    (marcaParam ? 1 : 0) +
+    (paisParam ? 1 : 0) +
+    (stockParam && stockParam !== 'con' ? 1 : 0);
+
+  const handleCambiarFiltro = (clave, valor) => {
+    actualizarUrl({ [clave]: valor, pagina: 1 });
+  };
+
+  const handleLimpiarFiltros = () => {
+    setBusqueda('');
+    actualizarUrl({
+      q: '',
+      categoria: '',
+      marca: '',
+      pais: '',
+      stock: 'con',
+      pagina: 1,
+    });
+  };
+
+  const catActiva = maestros.categorias.find((c) => c.id === catParam)?.nombre;
+  const marcaActiva = maestros.marcas.find((m) => m.id === marcaParam)?.nombre;
+  const paisActivo = maestros.paises.find((p) => p.id === paisParam)?.nombre;
 
   return (
-    <div className="store-container page-transition">
-      <h1 className="store-title">Catálogo</h1>
-      <p className="store-subtitle">Instrumentos y accesorios con disponibilidad actualizada.</p>
-
-      {!enLinea && (
-        <div className="modal-notice" role="status" style={{ marginBottom: 14 }}>
-          Sin conexión. Te mostramos el último catálogo guardado: precios y disponibilidad pueden haber cambiado.
-        </div>
-      )}
-
-      {/* Barra de herramientas */}
-      <div className="catalog-toolbar">
-        <div className="search-input">
-          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          <input
-            type="search"
-            inputMode="search"
-            placeholder="Buscar por nombre, marca, modelo o código…"
-            value={texto}
-            onChange={(e) => setTexto(e.target.value)}
-            aria-label="Buscar productos"
+    <div className="catalogo-container">
+      <div className="catalogo-layout">
+        {/* Sidebar en escritorio */}
+        <div className="catalogo-sidebar-desktop">
+          <CatalogoSidebar
+            filtros={{
+              stock: stockParam,
+              categoria: catParam,
+              marca: marcaParam,
+              pais: paisParam,
+            }}
+            maestros={maestros}
+            onCambiarFiltro={handleCambiarFiltro}
+            onLimpiar={handleLimpiarFiltros}
+            hayFiltros={hayFiltrosActivos}
           />
         </div>
 
-        <div className="filtros-desktop">{selectores}</div>
+        {/* Área principal de resultados */}
+        <main className="catalogo-main">
+          {/* Buscador general */}
+          <div className="catalogo-search">
+            <input
+              type="search"
+              className="search-input"
+              placeholder="Buscar por instrumento, marca, modelo..."
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              aria-label="Buscar en el catálogo"
+            />
+          </div>
 
-        <button type="button" className="btn btn-outline filtros-movil-btn" onClick={() => setFiltrosAbiertos(true)}>
-          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <line x1="4" y1="6" x2="20" y2="6" /><line x1="7" y1="12" x2="17" y2="12" /><line x1="10" y1="18" x2="14" y2="18" />
-          </svg>
-          Filtros{filtrosActivos > 0 && <span className="count-badge">{filtrosActivos}</span>}
-        </button>
+          {/* Barra superior de herramientas */}
+          <div className="catalogo-toolbar">
+            <div className="toolbar-left">
+              <button
+                type="button"
+                className="btn btn-outline btn-sm mobile-filter-btn"
+                onClick={() => setModalFiltrosAbierto(true)}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 16, height: 16 }}>
+                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+                </svg>
+                Filtros {contadorFiltrosActivos > 0 && `(${contadorFiltrosActivos})`}
+              </button>
 
-        <div className="view-toggle" role="group" aria-label="Tipo de vista">
-          <button type="button" className={vista === 'grilla' ? 'active' : ''} onClick={() => setVista('grilla')} aria-pressed={vista === 'grilla'}>
-            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" />
-            </svg>
-            <span className="view-toggle-label">Grilla</span>
-          </button>
-          <button type="button" className={vista === 'lista' ? 'active' : ''} onClick={() => setVista('lista')} aria-pressed={vista === 'lista'}>
-            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
-            </svg>
-            <span className="view-toggle-label">Lista</span>
-          </button>
-        </div>
+              <div className="results-info">
+                <span className="results-count">
+                  {cargando ? 'Buscando...' : `${total} ${total === 1 ? 'resultado' : 'resultados'}`}
+                </span>
+                {actualizadoEn && (
+                  <span className="results-updated">
+                    Actualizado {formatearHora(actualizadoEn)}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="toolbar-right">
+              <SelectCampo
+                etiqueta="Ordenar por"
+                valor={ordenParam}
+                onChange={(v) => handleCambiarFiltro('orden', v)}
+                opciones={OPCIONES_ORDEN}
+                todas={null}
+              />
+
+              <div className="view-toggle" role="group" aria-label="Vista del catálogo">
+                <button
+                  type="button"
+                  className={`toggle-btn ${vista === 'grilla' ? 'active' : ''}`}
+                  onClick={() => setVista('grilla')}
+                  aria-label="Vista de cuadrícula"
+                  title="Grilla"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="3" width="7" height="7" />
+                    <rect x="14" y="3" width="7" height="7" />
+                    <rect x="14" y="14" width="7" height="7" />
+                    <rect x="3" y="14" width="7" height="7" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  className={`toggle-btn ${vista === 'lista' ? 'active' : ''}`}
+                  onClick={() => setVista('lista')}
+                  aria-label="Vista de lista"
+                  title="Lista"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="8" y1="6" x2="21" y2="6" />
+                    <line x1="8" y1="12" x2="21" y2="12" />
+                    <line x1="8" y1="18" x2="21" y2="18" />
+                    <line x1="3" y1="6" x2="3.01" y2="6" />
+                    <line x1="3" y1="12" x2="3.01" y2="12" />
+                    <line x1="3" y1="18" x2="3.01" y2="18" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Chips de filtros activos */}
+          {hayFiltrosActivos && (
+            <div className="active-chips">
+              {qParam && (
+                <span className="chip">
+                  Búsqueda: {qParam}
+                  <button type="button" className="chip-remove" onClick={() => { setBusqueda(''); handleCambiarFiltro('q', ''); }} aria-label="Quitar filtro búsqueda">✕</button>
+                </span>
+              )}
+              {stockParam && stockParam !== 'con' && (
+                <span className="chip">
+                  Disponibilidad: {stockParam === 'sin' ? 'Sin stock' : 'Todos'}
+                  <button type="button" className="chip-remove" onClick={() => handleCambiarFiltro('stock', 'con')} aria-label="Quitar filtro disponibilidad">✕</button>
+                </span>
+              )}
+              {catActiva && (
+                <span className="chip">
+                  Categoría: {catActiva}
+                  <button type="button" className="chip-remove" onClick={() => handleCambiarFiltro('categoria', '')} aria-label="Quitar filtro categoría">✕</button>
+                </span>
+              )}
+              {marcaActiva && (
+                <span className="chip">
+                  Marca: {marcaActiva}
+                  <button type="button" className="chip-remove" onClick={() => handleCambiarFiltro('categoria', '')} aria-label="Quitar filtro marca">✕</button>
+                </span>
+              )}
+              {paisActivo && (
+                <span className="chip">
+                  Origen: {paisActivo}
+                  <button type="button" className="chip-remove" onClick={() => handleCambiarFiltro('pais', '')} aria-label="Quitar filtro origen">✕</button>
+                </span>
+              )}
+              <button type="button" className="btn-limpiar-chips" onClick={handleLimpiarFiltros}>
+                Limpiar todos
+              </button>
+            </div>
+          )}
+
+          {/* Cartel de error */}
+          {error && (
+            <div className="error-box">
+              <p>{error}</p>
+              <button type="button" className="btn btn-outline btn-sm" onClick={recargar}>
+                Reintentar
+              </button>
+            </div>
+          )}
+
+          {/* Grilla / Lista de productos */}
+          <div className={vista === 'lista' ? 'product-list' : 'product-grid'}>
+            {cargando
+              ? Array.from({ length: 6 }).map((_, i) => <ProductCardSkeleton key={i} />)
+              : items.map((art) => <ProductCard key={art.id} articulo={art} />)}
+          </div>
+
+          {/* Estado vacío */}
+          {!cargando && !error && items.length === 0 && (
+            <div className="empty-catalog">
+              <p className="empty-title">No encontramos instrumentos con los filtros seleccionados.</p>
+              {stockParam === 'con' && (
+                <div className="empty-actions">
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={() => handleCambiarFiltro('stock', 'todos')}
+                  >
+                    Ver también los sin stock
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Paginación */}
+          {!cargando && totalPaginas > 1 && (
+            <Paginacion
+              pagina={pagina}
+              totalPaginas={totalPaginas}
+              onCambiar={(p) => handleCambiarFiltro('pagina', p)}
+            />
+          )}
+        </main>
       </div>
 
-      {/* Categorías */}
-      {maestros.categorias.length > 0 && (
-        <div className="category-rail" role="group" aria-label="Categorías">
-          <button type="button" className={`category-chip ${!params.categoria ? 'active' : ''}`} onClick={() => actualizar({ categoria: '' })}>Todas</button>
-          {maestros.categorias.map((c) => (
-            <button key={c.id} type="button" className={`category-chip ${params.categoria === c.id ? 'active' : ''}`} onClick={() => actualizar({ categoria: c.id })}>
-              {c.nombre}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Resumen de resultados */}
-      <div className="results-summary" aria-live="polite">
-        <span>{cargando ? 'Buscando…' : `${total} ${total === 1 ? 'producto' : 'productos'}`}</span>
-        {horaAct && !cargando && !error && <span className="results-updated">Actualizado {horaAct}</span>}
-      </div>
-
-      {/* Resultados */}
-      {error ? (
-        <div className="empty-state" role="alert">
-          <h2>No pudimos cargar el catálogo</h2>
-          <p>{error}</p>
-          <button type="button" className="btn btn-primary" onClick={recargar}>Reintentar</button>
-        </div>
-      ) : cargando ? (
-        <div className={`product-grid ${vista === 'lista' ? 'is-list' : ''}`}>
-          {Array.from({ length: 8 }).map((_, i) => <ProductCardSkeleton key={i} />)}
-        </div>
-      ) : items.length === 0 ? (
-        <div className="empty-state">
-          <h2>No encontramos productos</h2>
-          <p>Probá con otras palabras o quitá algún filtro.</p>
-          {hayFiltros && <button type="button" className="btn btn-outline" onClick={limpiar}>Limpiar filtros</button>}
-        </div>
-      ) : (
-        <div className={`product-grid ${vista === 'lista' ? 'is-list' : ''}`}>
-          {items.map((a) => <ProductCard key={a.id} articulo={a} />)}
-        </div>
-      )}
-
-      {!cargando && !error && (
-        <Paginacion pagina={params.pagina} totalPaginas={totalPaginas} onCambiar={(p) => actualizar({ pagina: p > 1 ? String(p) : '' }, { push: true })} />
-      )}
-
-      {/* Filtros en móvil (Modal del design system) */}
+      {/* Modal responsivo de filtros en móviles */}
       <Modal
-        isOpen={filtrosAbiertos}
-        onClose={() => setFiltrosAbiertos(false)}
-        title="Filtros"
-        footer={
-          <>
-            <button type="button" className="btn btn-outline" onClick={() => { limpiar(); setFiltrosAbiertos(false); }}>Limpiar</button>
-            <button type="button" className="btn btn-primary" onClick={() => setFiltrosAbiertos(false)}>Ver {total} {total === 1 ? 'resultado' : 'resultados'}</button>
-          </>
-        }
+        isOpen={modalFiltrosAbierto}
+        onClose={() => setModalFiltrosAbierto(false)}
+        title="Filtros del catálogo"
       >
-        <div className="filtros-modal">{selectores}</div>
+        <CatalogoSidebar
+          filtros={{
+            stock: stockParam,
+            categoria: catParam,
+            marca: marcaParam,
+            pais: paisParam,
+          }}
+          maestros={maestros}
+          onCambiarFiltro={(k, v) => handleCambiarFiltro(k, v)}
+          onLimpiar={handleLimpiarFiltros}
+          hayFiltros={hayFiltrosActivos}
+        />
+        <div className="modal-apply-wrapper">
+          <button
+            type="button"
+            className="btn btn-primary btn-block"
+            onClick={() => setModalFiltrosAbierto(false)}
+          >
+            Ver {total} resultados
+          </button>
+        </div>
       </Modal>
     </div>
   );

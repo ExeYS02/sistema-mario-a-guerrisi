@@ -1,5 +1,9 @@
+'use client';
+
+import { useState } from 'react';
 import AutoProductImage from '@/components/AutoProductImage';
 import { formatearMonto } from '@/utils/format';
+import { useCart } from '@/context/CartContext';
 
 const DISPONIBILIDAD = {
   en_stock: { clase: 'badge-green', texto: () => 'En stock' },
@@ -7,12 +11,48 @@ const DISPONIBILIDAD = {
   sin_stock: { clase: 'badge-red', texto: () => 'Sin stock' },
 };
 
-// Tarjeta de producto del catálogo (patrón del design system).
-// `onAgregar` es opcional: el botón aparece recién cuando exista el carrito (HU-33).
-export default function ProductCard({ articulo, onAgregar }) {
+export default function ProductCard({ articulo }) {
+  const { carrito, agregarAlCarrito, modificarCantidad, eliminarDelCarrito } = useCart();
+  const [agregadoReciente, setAgregadoReciente] = useState(false);
+
   const disp = DISPONIBILIDAD[articulo.disponibilidad] ?? DISPONIBILIDAD.sin_stock;
   const titulo = articulo.descripcion;
   const consultaImagen = [articulo.marca, articulo.modelo || articulo.descripcion].filter(Boolean).join(' ');
+
+  const itemEnCarrito = carrito.find((i) => i.id === articulo.id);
+  const cantidadEnCarrito = itemEnCarrito ? itemEnCarrito.cantidad : 0;
+
+  const esSinStock = articulo.disponibilidad === 'sin_stock';
+  const esUltimas = articulo.disponibilidad === 'ultimas';
+  const topeAlcanzado = esUltimas && cantidadEnCarrito >= articulo.unidadesDisponibles;
+
+  const handleAgregar = (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (esSinStock) return;
+    agregarAlCarrito(articulo);
+    setAgregadoReciente(true);
+    setTimeout(() => {
+      setAgregadoReciente(false);
+    }, 1500);
+  };
+
+  const handleDecrementar = (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (cantidadEnCarrito <= 1) {
+      eliminarDelCarrito(articulo.id);
+    } else {
+      modificarCantidad(articulo.id, cantidadEnCarrito - 1);
+    }
+  };
+
+  const handleIncrementar = (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (topeAlcanzado) return;
+    modificarCantidad(articulo.id, cantidadEnCarrito + 1);
+  };
 
   return (
     <article className="product-card">
@@ -31,18 +71,42 @@ export default function ProductCard({ articulo, onAgregar }) {
             {disp.texto(articulo.unidadesDisponibles)}
           </span>
         </div>
-        {onAgregar && (
-          <div className="product-card-actions">
+
+        <div className="product-card-actions" onClick={(e) => e.stopPropagation()}>
+          {cantidadEnCarrito > 0 ? (
+            <div className="qty-selector" aria-label={`Cantidad de ${titulo} en el carrito`}>
+              <button
+                type="button"
+                className="qty-btn"
+                onClick={handleDecrementar}
+                aria-label="Disminuir cantidad"
+              >
+                −
+              </button>
+              <span className="qty-val">{cantidadEnCarrito}</span>
+              <button
+                type="button"
+                className="qty-btn"
+                onClick={handleIncrementar}
+                disabled={topeAlcanzado}
+                title={topeAlcanzado ? `Máximo disponible (${articulo.unidadesDisponibles})` : 'Aumentar cantidad'}
+                aria-label="Aumentar cantidad"
+              >
+                +
+              </button>
+            </div>
+          ) : (
             <button
               type="button"
-              className="btn btn-primary btn-sm"
-              disabled={articulo.disponibilidad === 'sin_stock'}
-              onClick={() => onAgregar(articulo)}
+              className={`btn btn-sm ${agregadoReciente ? 'btn-success' : 'btn-primary'}`}
+              disabled={esSinStock}
+              onClick={handleAgregar}
+              aria-live="polite"
             >
-              Agregar al carrito
+              {esSinStock ? 'Sin stock' : agregadoReciente ? '¡Agregado!' : 'Agregar al carrito'}
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </article>
   );
@@ -51,7 +115,9 @@ export default function ProductCard({ articulo, onAgregar }) {
 export function ProductCardSkeleton() {
   return (
     <div className="product-card" aria-hidden="true">
-      <div className="product-thumb"><div className="skeleton" style={{ position: 'absolute', inset: 0, borderRadius: 0 }} /></div>
+      <div className="product-thumb">
+        <div className="skeleton" style={{ position: 'absolute', inset: 0, borderRadius: 0 }} />
+      </div>
       <div className="product-body">
         <div className="skeleton skeleton-text" style={{ width: '40%' }} />
         <div className="skeleton skeleton-text" style={{ width: '85%' }} />

@@ -1,8 +1,5 @@
 import { apiFetch } from '@/services/apiClient';
 
-// Service del catálogo (front). La API habla en snake_case; acá se convierte
-// a camelCase en una sola capa, igual que en el ERP (mapFromApi).
-
 const UNIDAD_SIN_MODELO = 'Sin especificar';
 
 function mapArticuloFromApi(a) {
@@ -18,7 +15,7 @@ function mapArticuloFromApi(a) {
     marca: a.marca?.nombre ?? '',
     marcaId: a.marca?.id ?? null,
     paisOrigen: a.pais_origen?.nombre ?? '',
-    disponibilidad: a.disponibilidad, // 'en_stock' | 'ultimas' | 'sin_stock'
+    disponibilidad: a.disponibilidad,
     unidadesDisponibles: a.unidades_disponibles,
   };
 }
@@ -30,7 +27,9 @@ export async function obtenerCatalogo(params, { signal } = {}) {
   if (params.marca) sp.set('marca', params.marca);
   if (params.pais) sp.set('pais', params.pais);
   if (params.orden) sp.set('orden', params.orden);
+  if (params.stock && params.stock !== 'con') sp.set('stock', params.stock);
   if (params.pagina > 1) sp.set('pagina', String(params.pagina));
+
   const json = await apiFetch(`/catalogo?${sp.toString()}`, { signal });
   return {
     items: json.items.map(mapArticuloFromApi),
