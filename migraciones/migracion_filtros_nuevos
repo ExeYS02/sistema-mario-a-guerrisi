@@ -1,0 +1,54 @@
+-- ============================================================================
+-- MIGRACIÓN: HU-32 / Tarea 3 - Filtrado y Ordenamiento por Stock en Catálogo
+-- Archivo: migraciones/migracion_catalogo_stock_filtro.sql
+-- ============================================================================
+-- Consolida el cálculo de disponibilidad por artículo considerando únicamente
+-- depósitos activos (depositos.estado = true) y aplicando COALESCE para artículos sin existencias.
+-- Es totalmente idempotente.
+
+CREATE OR REPLACE VIEW public.v_articulos_catalogo AS
+SELECT 
+  a.id,
+  a.codigo_interno,
+  a.descripcion,
+  a.modelo,
+  a.codigo_ean13,
+  a.categoria_id,
+  a.marca_id,
+  a.pais_origen,
+  a.precio_actual,
+  a.estado,
+  a.fecha_hora_registro,
+  COALESCE(SUM(GREATEST(e.cantidad - e.cantidad_reservada, 0)), 0)::integer AS disponible,
+  COALESCE(SUM(e.stock_minimo), 0)::integer AS stock_minimo_total,
+  (COALESCE(SUM(GREATEST(e.cantidad - e.cantidad_reservada, 0)), 0) > 0) AS tiene_stock
+FROM public.articulos a
+LEFT JOIN public.existencias e ON e.articulo_id = a.id
+LEFT JOIN public.depositos d ON d.id = e.deposito_id AND d.estado = true
+GROUP BY a.id;
+
+-- Otorgar permisos de lectura para la API de Supabase / PostgREST
+GRANT SELECT ON public.v_articulos_catalogo TO anon, authenticated, service_role;
+
+/*
+===============================================================================
+CONSULTA DE VERIFICACIÓN Y DIAGNÓSTICO
+===============================================================================
+Compara los datos calculados por la vista v_articulos_catalogo contra la suma
+directa sobre la tabla existencias considerando depósitos activos.
+Si no devuelve ninguna fila, la vista está operando con 100% de consistencia.
+
+SELECT 
+  a.id,
+  a.descripcion,
+  v.disponible AS disponible_vista,
+  v.tiene_stock AS tiene_stock_vista,
+  COALESCE(SUM(GREATEST(e.cantidad - e.cantidad_reservada, 0)), 0) AS disponible_calculado
+FROM public.articulos a
+JOIN public.v_articulos_catalogo v ON v.id = a.id
+LEFT JOIN public.existencias e ON e.articulo_id = a.id
+LEFT JOIN public.depositos d ON d.id = e.deposito_id AND d.estado = true
+GROUP BY a.id, a.descripcion, v.disponible, v.tiene_stock
+HAVING v.disponible <> COALESCE(SUM(GREATEST(e.cantidad - e.cantidad_reservada, 0)), 0);
+===============================================================================
+*/

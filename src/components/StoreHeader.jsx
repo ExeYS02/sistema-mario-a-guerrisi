@@ -3,17 +3,21 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
+import { formatearMonto } from '@/utils/format';
 
 // Header de la tienda (patrón del design system: marca a la izquierda, navegación a la derecha).
 export default function StoreHeader() {
   const pathname = usePathname();
+  const enInicio = pathname === '/';
   const enCatalogo = pathname?.startsWith('/catalogo');
+  const enEnvios = pathname?.startsWith('/envios');
+  const enCarrito = pathname?.startsWith('/carrito');
   const { totalArticulos, total } = useCart();
 
   return (
     <header className="store-header">
       <div className="store-header-inner">
-        <Link href="/catalogo" className="store-brand" aria-label="Mario A. Guerrisi - ir al catálogo">
+        <Link href="/" className="store-brand" aria-label="Mario A. Guerrisi - ir al inicio">
           <span className="brand-mark">
             <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 18V5l12-2v13" />
@@ -29,9 +33,33 @@ export default function StoreHeader() {
 
         <nav className="store-nav" aria-label="Principal" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <Link 
+            href="/" 
+            className={`store-nav-link ${enInicio ? 'active' : ''}`} 
+            aria-current={enInicio ? 'page' : undefined}
+          >
+            Inicio
+          </Link>
+
+          <Link 
+            href="/catalogo" 
+            className={`store-nav-link ${enCatalogo ? 'active' : ''}`} 
+            aria-current={enCatalogo ? 'page' : undefined}
+          >
+            Catálogo
+          </Link>
+
+          <Link 
+            href="/envios" 
+            className={`store-nav-link ${enEnvios ? 'active' : ''}`} 
+            aria-current={enEnvios ? 'page' : undefined}
+          >
+            Tus envíos
+          </Link>
+
+          <Link 
             href="/carrito" 
-            className={`store-nav-link ${pathname?.startsWith('/carrito') ? 'active' : ''}`} 
-            aria-current={pathname?.startsWith('/carrito') ? 'page' : undefined} 
+            className={`store-nav-link ${enCarrito ? 'active' : ''}`} 
+            aria-current={enCarrito ? 'page' : undefined} 
             style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: '1.2', padding: '0.5rem 1rem' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -40,30 +68,12 @@ export default function StoreHeader() {
             </div>
             {totalArticulos > 0 && (
               <span style={{ fontSize: '0.8em', color: 'inherit', opacity: 0.8 }}>
-                Total: ${total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                Total: {formatearMonto(total)}
               </span>
             )}
-          </Link>
-          
-          <Link 
-            href="/catalogo" 
-            className={`store-nav-link ${enCatalogo ? 'active' : ''}`} 
-            aria-current={enCatalogo ? 'page' : undefined}
-          >
-            Catálogo
-          </Link>
-          <Link 
-            href="/envios" 
-            className={`store-nav-link ${pathname?.startsWith('/envios') ? 'active' : ''}`} 
-            aria-current={pathname?.startsWith('/envios') ? 'page' : undefined}
-          >
-            Tus envíos
           </Link>
         </nav>
       </div>
     </header>
   );
 }
-
-
-

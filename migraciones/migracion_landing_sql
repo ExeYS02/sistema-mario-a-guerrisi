@@ -1,0 +1,18 @@
+-- Migración para Landing Page (Sprint Landing E-commerce)
+-- Crea la vista para ranking de productos más vendidos en ventas confirmadas real.
+-- Idempotente (CREATE OR REPLACE VIEW)
+
+CREATE OR REPLACE VIEW public.v_articulos_mas_vendidos AS
+SELECT 
+    vd.articulo_id,
+    SUM(vd.cantidad)::integer AS total_vendido
+FROM public.ventas_detalle vd
+JOIN public.ventas v ON v.id = vd.venta_id
+WHERE v.estado = 'Confirmada'
+GROUP BY vd.articulo_id;
+
+-- Consulta de verificación manual:
+-- SELECT a.id, a.descripcion, vmv.total_vendido
+-- FROM public.v_articulos_mas_vendidos vmv
+-- JOIN public.articulos a ON a.id = vmv.articulo_id
+-- ORDER BY vmv.total_vendido DESC;

@@ -1,22 +1,52 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
-// Caché en memoria para evitar llamadas duplicadas en la misma sesión
 const imageMemoryCache = new Map();
 
-function AutoProductImage({ query, alt, className, style }) {
+function AutoProductImage({ query, alt, className, style, lazy = false }) {
   const [imageUrl, setImageUrl] = useState(null);
   const [loading, setLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
+  const [inView, setInView] = useState(!lazy);
+  const imgRef = useRef(null);
 
   useEffect(() => {
+    if (!lazy) {
+      setInView(true);
+      return;
+    }
+
+    if (typeof IntersectionObserver === 'undefined') {
+      setInView(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setInView(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '200px' }
+    );
+
+    if (imgRef.current) {
+      observer.observe(imgRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [lazy]);
+
+  useEffect(() => {
+    if (!inView) return;
+
     if (!query || query.trim() === '') {
       setLoading(false);
       return;
     }
 
-    // 1. Limpiar el término de búsqueda (ej: "Fender Stratocaster Player" -> "Fender Stratocaster")
     const cleanQuery = query
       .replace(/[^\w\s-]/gi, '')
       .split(' ')
@@ -24,14 +54,13 @@ function AutoProductImage({ query, alt, className, style }) {
       .join(' ')
       .trim();
 
-    // 2. Verificar si ya está en caché de memoria o sessionStorage
     if (imageMemoryCache.has(cleanQuery)) {
       setImageUrl(imageMemoryCache.get(cleanQuery));
       setLoading(false);
       return;
     }
 
-    const cachedStorage = sessionStorage.getItem(`img_cache_${cleanQuery}`);
+    const cachedStorage = typeof window !== 'undefined' ? sessionStorage.getItem(`img_cache_${cleanQuery}`) : null;
     if (cachedStorage) {
       imageMemoryCache.set(cleanQuery, cachedStorage);
       setImageUrl(cachedStorage);
@@ -43,16 +72,13 @@ function AutoProductImage({ query, alt, className, style }) {
     setLoading(true);
     setHasError(false);
 
-    // 3. Buscar en Wikipedia/Wikimedia API (Español e Inglés con fallback)
     const fetchImage = async () => {
       try {
-        // Intento 1: Wikipedia en español
         let res = await fetch(
           `https://es.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(cleanQuery)}`
         );
         let data = res.ok ? await res.json() : null;
 
-        // Intento 2: Wikipedia en inglés (catálogo más amplio de marcas/modelos)
         if (!data || !data.thumbnail?.source) {
           res = await fetch(
             `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(cleanQuery)}`
@@ -62,7 +88,7 @@ function AutoProductImage({ query, alt, className, style }) {
 
         if (isMounted) {
           if (data && data.thumbnail?.source) {
-            const highResUrl = data.thumbnail.source.replace(/\/\d+px-/, '/600px-'); // Mejorar resolución
+            const highResUrl = data.thumbnail.source.replace(/\/\d+px-/, '/600px-');
             imageMemoryCache.set(cleanQuery, highResUrl);
             sessionStorage.setItem(`img_cache_${cleanQuery}`, highResUrl);
             setImageUrl(highResUrl);
@@ -82,28 +108,30 @@ function AutoProductImage({ query, alt, className, style }) {
     return () => {
       isMounted = false;
     };
-  }, [query]);
+  }, [query, inView]);
 
-  // Si falló o no encontró foto, muestra el icono estándar
   if (hasError || !imageUrl) {
     return (
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        strokeWidth="1.3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        style={{ width: '50px', height: '50px', stroke: 'var(--gray-700)', ...style }}
-      >
-        <path d="M9 18V5l12-2v13" />
-        <circle cx="6" cy="18" r="3" />
-        <circle cx="18" cy="16" r="3" />
-      </svg>
+      <div ref={imgRef} style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          strokeWidth="1.3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ width: '50px', height: '50px', stroke: 'var(--gray-700)', ...style }}
+        >
+          <path d="M9 18V5l12-2v13" />
+          <circle cx="6" cy="18" r="3" />
+          <circle cx="18" cy="16" r="3" />
+        </svg>
+      </div>
     );
   }
 
   return (
     <img
+      ref={imgRef}
       src={imageUrl}
       alt={alt || query}
       className={className}

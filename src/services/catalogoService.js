@@ -2,7 +2,7 @@ import { apiFetch } from '@/services/apiClient';
 
 const UNIDAD_SIN_MODELO = 'Sin especificar';
 
-function mapArticuloFromApi(a) {
+export function mapArticuloFromApi(a) {
   return {
     id: a.id,
     codigoInterno: a.codigo_interno,
