@@ -4,8 +4,9 @@ import { useState, useEffect, useRef } from 'react';
 
 const imageMemoryCache = new Map();
 
-function AutoProductImage({ query, alt, className, style, lazy = false }) {
-  const [imageUrl, setImageUrl] = useState(null);
+function AutoProductImage({ brand, model, description, category, query, alt, className, style, lazy = false }) {
+  const [imageCandidates, setImageCandidates] = useState([]);
+  const [imageIndex, setImageIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [inView, setInView] = useState(!lazy);
@@ -13,12 +14,10 @@ function AutoProductImage({ query, alt, className, style, lazy = false }) {
 
   useEffect(() => {
     if (!lazy) {
-      setInView(true);
       return;
     }
 
     if (typeof IntersectionObserver === 'undefined') {
-      setInView(true);
       return;
     }
 
@@ -40,63 +39,117 @@ function AutoProductImage({ query, alt, className, style, lazy = false }) {
   }, [lazy]);
 
   useEffect(() => {
-    if (!inView) return;
+    if (!inView && typeof IntersectionObserver !== 'undefined') return;
 
-    if (!query || query.trim() === '') {
-      setLoading(false);
+    const junkWords = ['sin especificar', 'estándar', 'estandar', 's/ean', 's/c', 'n/a', 'null', 'undefined', 'todas', 'articulo'];
+    const cleanWord = (text) => {
+      if (!text) return '';
+      const value = String(text).trim();
+      return junkWords.includes(value.toLowerCase()) ? '' : value;
+    };
+
+    const cleanQuery = (text) =>
+      cleanWord(text)
+        .replace(/sin especificar|estándar|estandar|s\/c/gi, '')
+        .trim();
+
+    const cleanBrand = cleanWord(brand);
+    const cleanModel = cleanWord(model);
+    const cleanDescription = cleanWord(description);
+    const cleanCategory = cleanWord(category);
+    const productName = [cleanBrand, cleanModel].filter(Boolean).join(' ');
+    const cleanUserQuery = cleanQuery(query);
+    const searchTerms = [
+      cleanUserQuery ? `"${cleanUserQuery}" ${cleanCategory} musical instrument` : '',
+      productName ? `"${productName}" ${cleanCategory} musical instrument` : '',
+      [cleanBrand, cleanModel, cleanDescription, cleanCategory, 'musical instrument'].filter(Boolean).join(' '),
+      productName ? `"${productName}" instrument` : '',
+      [cleanDescription, cleanCategory, 'musical instrument'].filter(Boolean).join(' '),
+      [cleanBrand, cleanCategory, 'musical instrument'].filter(Boolean).join(' '),
+      cleanCategory ? `${cleanCategory} musical instrument` : '',
+      cleanUserQuery ? `${cleanUserQuery} instrument product` : '',
+    ];
+    const uniqueSearchTerms = [...new Set(searchTerms.filter((term) => term.replace(/["\s]/g, '').length >= 2))];
+
+    if (uniqueSearchTerms.length === 0) {
       return;
     }
 
-    const cleanQuery = query
-      .replace(/[^\w\s-]/gi, '')
-      .split(' ')
-      .slice(0, 3)
-      .join(' ')
-      .trim();
-
-    if (imageMemoryCache.has(cleanQuery)) {
-      setImageUrl(imageMemoryCache.get(cleanQuery));
-      setLoading(false);
-      return;
-    }
-
-    const cachedStorage = typeof window !== 'undefined' ? sessionStorage.getItem(`img_cache_${cleanQuery}`) : null;
-    if (cachedStorage) {
-      imageMemoryCache.set(cleanQuery, cachedStorage);
-      setImageUrl(cachedStorage);
-      setLoading(false);
-      return;
-    }
+    const cacheKey = `v2_${uniqueSearchTerms.join('|')}`;
 
     let isMounted = true;
-    setLoading(true);
-    setHasError(false);
 
     const fetchImage = async () => {
-      try {
-        let res = await fetch(
-          `https://es.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(cleanQuery)}`
-        );
-        let data = res.ok ? await res.json() : null;
+      setLoading(true);
+      setHasError(false);
+      setImageCandidates([]);
+      setImageIndex(0);
 
-        if (!data || !data.thumbnail?.source) {
-          res = await fetch(
-            `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(cleanQuery)}`
-          );
-          data = res.ok ? await res.json() : null;
+      try {
+        const cachedMemory = imageMemoryCache.get(cacheKey);
+        let cachedCandidates = Array.isArray(cachedMemory)
+          ? cachedMemory
+          : cachedMemory
+            ? [cachedMemory]
+            : null;
+        let cachedStorage = null;
+        try {
+          cachedStorage =
+            typeof window !== 'undefined' ? sessionStorage.getItem(`img_cache_${cacheKey}`) : null;
+        } catch (storageError) {
+          console.error('No se pudo leer la caché de imágenes:', storageError);
+        }
+
+        if (!cachedCandidates && cachedStorage) {
+          try {
+            const parsedCache = JSON.parse(cachedStorage);
+            cachedCandidates = Array.isArray(parsedCache) ? parsedCache : [cachedStorage];
+          } catch {
+            cachedCandidates = [cachedStorage];
+          }
+        }
+
+        const candidates = [...(cachedCandidates || [])];
+
+        for (const term of uniqueSearchTerms) {
+          if (candidates.length >= 8) break;
+          const endpoint = `https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${encodeURIComponent(
+            term
+          )}&gsrlimit=10&prop=pageimages&pithumbsize=600`;
+          try {
+            const res = await fetch(endpoint);
+            if (!res.ok) continue;
+
+            const data = await res.json();
+            const pages = data?.query?.pages;
+            if (pages) {
+              Object.values(pages).forEach((page) => {
+                const source = page?.thumbnail?.source;
+                if (source && !candidates.includes(source) && candidates.length < 8) {
+                  candidates.push(source);
+                }
+              });
+            }
+          } catch (searchError) {
+            console.error(`Error buscando imágenes con el término "${term}":`, searchError);
+          }
         }
 
         if (isMounted) {
-          if (data && data.thumbnail?.source) {
-            const highResUrl = data.thumbnail.source.replace(/\/\d+px-/, '/600px-');
-            imageMemoryCache.set(cleanQuery, highResUrl);
-            sessionStorage.setItem(`img_cache_${cleanQuery}`, highResUrl);
-            setImageUrl(highResUrl);
+          if (candidates.length) {
+            imageMemoryCache.set(cacheKey, candidates);
+            try {
+              sessionStorage.setItem(`img_cache_${cacheKey}`, JSON.stringify(candidates));
+            } catch (storageError) {
+              console.error('No se pudo guardar la caché de imágenes:', storageError);
+            }
+            setImageCandidates(candidates);
           } else {
             setHasError(true);
           }
         }
       } catch (err) {
+        console.error('Error al cargar imágenes del producto:', err);
         if (isMounted) setHasError(true);
       } finally {
         if (isMounted) setLoading(false);
@@ -108,7 +161,9 @@ function AutoProductImage({ query, alt, className, style, lazy = false }) {
     return () => {
       isMounted = false;
     };
-  }, [query, inView]);
+  }, [brand, model, description, category, query, inView, lazy]);
+
+  const imageUrl = imageCandidates[imageIndex];
 
   if (hasError || !imageUrl) {
     return (
@@ -135,7 +190,14 @@ function AutoProductImage({ query, alt, className, style, lazy = false }) {
       src={imageUrl}
       alt={alt || query}
       className={className}
-      onError={() => setHasError(true)}
+      onLoad={() => setLoading(false)}
+      onError={() => {
+        if (imageIndex + 1 < imageCandidates.length) {
+          setImageIndex((index) => index + 1);
+        } else {
+          setHasError(true);
+        }
+      }}
       style={{
         width: '100%',
         height: '100%',

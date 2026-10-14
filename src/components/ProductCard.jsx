@@ -17,8 +17,6 @@ export default function ProductCard({ articulo }) {
 
   const disp = DISPONIBILIDAD[articulo.disponibilidad] ?? DISPONIBILIDAD.sin_stock;
   const titulo = articulo.descripcion;
-  const consultaImagen = [articulo.marca, articulo.modelo || articulo.descripcion].filter(Boolean).join(' ');
-
   const itemEnCarrito = carrito.find((i) => i.id === articulo.id);
   const cantidadEnCarrito = itemEnCarrito ? itemEnCarrito.cantidad : 0;
 
@@ -58,7 +56,13 @@ export default function ProductCard({ articulo }) {
     <article className="product-card">
       <div className="product-thumb">
         {articulo.categoria && <span className="thumb-tag">{articulo.categoria}</span>}
-        <AutoProductImage query={consultaImagen} alt={`${articulo.marca} ${titulo}`} />
+        <AutoProductImage
+          brand={articulo.marca}
+          model={articulo.modelo}
+          description={articulo.descripcion}
+          category={articulo.categoria}
+          alt={`${articulo.marca} ${titulo}`}
+        />
       </div>
       <div className="product-body">
         <div className="product-brand">{articulo.marca}</div>
