@@ -1,5 +1,3 @@
-// Helper para llamar a los Route Handlers de esta misma app (src/app/api/*).
-// Los services de cada módulo (articulos, ventas, proveedores...) se apoyan en este.
 export async function apiFetch(path, options = {}) {
   const res = await fetch(`/api${path}`, {
     ...options,
@@ -9,4 +7,13 @@ export async function apiFetch(path, options = {}) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || res.statusText);
   return json;
+}
+
+export async function apiFetchAuth(path, clienteId, options = {}) {
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Cliente-Id': clienteId,
+    ...(options.headers || {})
+  };
+  return apiFetch(path, { ...options, headers });
 }

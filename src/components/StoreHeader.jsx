@@ -1,78 +1,71 @@
 'use client';
-
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
-import { formatearMonto } from '@/utils/format';
+import { useAuth } from '@/context/AuthContext';
 
-// Header de la tienda (patrón del design system: marca a la izquierda, navegación a la derecha).
 export default function StoreHeader() {
-  const pathname = usePathname();
-  const enInicio = pathname === '/';
-  const enCatalogo = pathname?.startsWith('/catalogo');
-  const enEnvios = pathname?.startsWith('/envios');
-  const enCarrito = pathname?.startsWith('/carrito');
+  const ruta = usePathname();
   const { totalArticulos, total } = useCart();
+  const { cliente, isHydrated, abrirLogin, cerrarSesion } = useAuth();
 
   return (
     <header className="store-header">
       <div className="store-header-inner">
-        <Link href="/" className="store-brand" aria-label="Mario A. Guerrisi - ir al inicio">
-          <span className="brand-mark">
-            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 18V5l12-2v13" />
-              <circle cx="6" cy="18" r="3" />
-              <circle cx="18" cy="16" r="3" />
+        
+        {/* LOGO AREA RESTAURADA */}
+        <div className="logo-area">
+          <div className="logo-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 18V5l12-2v13"></path>
+              <circle cx="6" cy="18" r="3"></circle>
+              <circle cx="18" cy="16" r="3"></circle>
             </svg>
-          </span>
-          <span className="brand-text">
-            <span className="brand-name">Mario A. Guerrisi</span>
-            <span className="brand-sub">Instrumentos musicales</span>
-          </span>
-        </Link>
+          </div>
+          <div className="logo-text">
+            <h1>
+              <Link href="/">Mario A. Guerrisi</Link>
+            </h1>
+            <span className="logo-subtitle">INSTRUMENTOS MUSICALES</span>
+          </div>
+        </div>
 
-        <nav className="store-nav" aria-label="Principal" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <Link 
-            href="/" 
-            className={`store-nav-link ${enInicio ? 'active' : ''}`} 
-            aria-current={enInicio ? 'page' : undefined}
-          >
-            Inicio
-          </Link>
-
-          <Link 
-            href="/catalogo" 
-            className={`store-nav-link ${enCatalogo ? 'active' : ''}`} 
-            aria-current={enCatalogo ? 'page' : undefined}
-          >
-            Catálogo
-          </Link>
-
-          <Link 
-            href="/envios" 
-            className={`store-nav-link ${enEnvios ? 'active' : ''}`} 
-            aria-current={enEnvios ? 'page' : undefined}
-          >
-            Tus envíos
-          </Link>
-
-          <Link 
-            href="/carrito" 
-            className={`store-nav-link ${enCarrito ? 'active' : ''}`} 
-            aria-current={enCarrito ? 'page' : undefined} 
-            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: '1.2', padding: '0.5rem 1rem' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              Carrito de compras
-              {totalArticulos > 0 && <span>({totalArticulos})</span>}
-            </div>
-            {totalArticulos > 0 && (
-              <span style={{ fontSize: '0.8em', color: 'inherit', opacity: 0.8 }}>
-                Total: {formatearMonto(total)}
-              </span>
-            )}
-          </Link>
+        {/* NAVEGACIÓN */}
+        <nav className="nav-links">
+          <Link href="/" className={ruta === '/' ? 'active' : ''}>Inicio</Link>
+          <Link href="/catalogo" className={ruta === '/catalogo' ? 'active' : ''}>Catálogo</Link>
+          <Link href="/envios" className={ruta === '/envios' ? 'active' : ''}>Tus envíos</Link>
         </nav>
+
+        {/* ACCIONES (AUTH + CARRITO) */}
+        <div className="header-actions">
+          <div className="auth-section">
+            {!isHydrated ? (
+               <span className="auth-loading">Cargando...</span>
+            ) : cliente ? (
+              <div className="auth-user-menu">
+                <span className="auth-greeting">Hola, {cliente.razon_social.split(' ')[0]}</span>
+                <button className="btn-link text-danger" style={{ fontSize: '0.85rem' }} onClick={cerrarSesion}>Salir</button>
+              </div>
+            ) : (
+              <button className="btn-link" style={{ fontWeight: 600, color: '#ef4444' }} onClick={abrirLogin}>
+                Ingresar
+              </button>
+            )}
+          </div>
+
+          <Link href="/carrito" className="cart-area" aria-label="Ver carrito">
+            <div className="cart-text-group">
+              <span className="cart-title">
+                Carrito de compras ({totalArticulos})
+              </span>
+              <span className="cart-total">
+                Total: ${total.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+          </Link>
+        </div>
+
       </div>
     </header>
   );
