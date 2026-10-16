@@ -57,6 +57,9 @@ export default function ProductCard({ articulo }) {
       <div className="product-thumb">
         {articulo.categoria && <span className="thumb-tag">{articulo.categoria}</span>}
         <AutoProductImage
+          id={articulo.id}
+          internalCode={articulo.codigoInterno}
+          ean={articulo.codigoEan13}
           brand={articulo.marca}
           model={articulo.modelo}
           description={articulo.descripcion}

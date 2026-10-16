@@ -3,6 +3,15 @@
 import { useState, useEffect } from 'react';
 import { useCart } from '@/context/CartContext';
 
+function obtenerClaseEstadoEnvio(estado) {
+  const estadoNormalizado = String(estado || '').toLowerCase();
+
+  if (estadoNormalizado.includes('pendiente')) return 'shipment-status--pending';
+  if (estadoNormalizado.includes('cancel')) return 'shipment-status--cancelled';
+  if (estadoNormalizado.includes('entreg')) return 'shipment-status--delivered';
+  return '';
+}
+
 export default function EnviosClient() {
   const { cliente, setCliente } = useCart();
   
@@ -208,25 +217,18 @@ export default function EnviosClient() {
           <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem' }}>No tienes envíos ni retiros registrados.</p>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        <div className="shipment-list">
           {envios.map(envio => (
-            <div key={envio.id} className="card" style={{ padding: '1.5rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem', marginBottom: '1rem' }}>
-                <div>
-                  <h3 style={{ margin: '0 0 0.5rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{ 
-                      padding: '0.25rem 0.5rem', 
-                      borderRadius: '4px', 
-                      fontSize: '0.85rem', 
-                      fontWeight: 'bold',
-                      backgroundColor: envio.estado === 'Entregado' ? '#d4edda' : '#fff3cd',
-                      color: envio.estado === 'Entregado' ? '#155724' : '#856404'
-                    }}>
+            <article key={envio.id} className="card shipment-card">
+              <header className="shipment-card__header">
+                <div className="shipment-card__summary">
+                  <h3 className="shipment-card__title">
+                    <span className={`shipment-status ${obtenerClaseEstadoEnvio(envio.estado)}`}>
                       {envio.estado}
                     </span>
                     {envio.tipo === 'retiro' ? 'Retiro en Sucursal' : 'Envío a Domicilio'}
                   </h3>
-                  <p style={{ margin: 0, fontWeight: '500', color: 'var(--primary-color)' }}>
+                  <p className="shipment-card__eta">
                     {envio.fecha_estimada ? (
                       envio.tipo === 'retiro' 
                         ? `Podés retirarlo a partir del: ${new Date(envio.fecha_estimada).toLocaleDateString('es-AR')}`
@@ -236,30 +238,28 @@ export default function EnviosClient() {
                     )}
                   </p>
                 </div>
-                <div style={{ textAlign: 'right', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                  <p style={{ margin: '0 0 0.25rem 0' }}>Comprobante: <strong>{envio.numero_comprobante}</strong></p>
-                  <p style={{ margin: '0 0 0.25rem 0' }}>Estado Venta: <strong>{envio.venta_estado}</strong></p>
-                  <p style={{ margin: 0 }}>Registrado el: {new Date(envio.fecha_registro || envio.fecha_hora_registro || envio.created_at).toLocaleDateString('es-AR')}</p>
+                <div className="shipment-card__meta">
+                  <p>Comprobante <strong>{envio.numero_comprobante}</strong></p>
+                  <p>Estado de venta <strong>{envio.venta_estado}</strong></p>
+                  <p>Registrado el <strong>{new Date(envio.fecha_registro || envio.fecha_hora_registro || envio.created_at).toLocaleDateString('es-AR')}</strong></p>
                 </div>
-              </div>
+              </header>
 
-              <div>
-                <h4 style={{ fontSize: '1rem', marginBottom: '0.75rem' }}>Artículos incluidos:</h4>
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+              <section className="shipment-card__items">
+                <h4>Artículos incluidos</h4>
+                <ul>
                   {envio.envios_detalle && envio.envios_detalle.map((detalle, idx) => (
-                    <li key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: idx < envio.envios_detalle.length - 1 ? '1px dashed var(--border-color)' : 'none' }}>
-                      <div>
-                        <span style={{ fontWeight: '500' }}>{detalle.articulos?.descripcion}</span>
-                        <span style={{ color: 'var(--text-secondary)', marginLeft: '0.5rem', fontSize: '0.9rem' }}>Mod: {detalle.articulos?.modelo}</span>
+                    <li key={idx}>
+                      <div className="shipment-card__product">
+                        <span className="shipment-card__product-name">{detalle.articulos?.descripcion}</span>
+                        <span className="shipment-card__product-model">Mod: {detalle.articulos?.modelo}</span>
                       </div>
-                      <div style={{ fontWeight: 'bold' }}>
-                        x{detalle.cantidad}
-                      </div>
+                      <span className="shipment-card__quantity">x{detalle.cantidad}</span>
                     </li>
                   ))}
                 </ul>
-              </div>
-            </div>
+              </section>
+            </article>
           ))}
         </div>
       )}
