@@ -2841,3 +2841,43 @@ tbody tr:hover { background-color: #F4F4F8 !important; }
 .hero-btn.btn-outline:hover { background: #fff; color: var(--black); }
 .hero-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }
 /* ===== HERO — FIN ===== */
+/* ===== STOREFRONT — TUS ENVÍOS ===== */
+/* NUEVO (e-commerce): actualizar la skill guerrisi-design-system con este bloque */
+.envios-tabs { overflow-x: auto; }
+.envios-tabs .tab-btn { white-space: nowrap; }
+.envios-resumen { font-size: 12.5px; color: var(--gray-500); margin: 0 0 10px; }
+.envio-fecha { font-variant-numeric: tabular-nums lining-nums; white-space: nowrap; }
+
+.envio-chevron svg { transition: transform 0.15s ease; }
+.envio-chevron.open svg { transform: rotate(180deg); }
+
+.envio-detalle-row td { background: var(--gray-50); padding: 14px 20px 14px 58px; }
+.envio-detalle-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--ink); }
+.envio-detalle-list li { display: flex; align-items: baseline; gap: 10px; }
+.envio-qty { font-weight: 700; color: var(--black); font-variant-numeric: tabular-nums; min-width: 28px; }
+
+.envios-cards { display: none; flex-direction: column; gap: 12px; }
+.envio-card {
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.envio-card-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.envio-card-meta { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--gray-700); }
+.envio-card-llegada {
+  display: flex; justify-content: space-between; align-items: center;
+  padding-top: 10px; border-top: 1px solid var(--gray-100);
+  font-size: 12.5px; color: var(--gray-500);
+}
+.envio-card-llegada strong { color: var(--black); font-weight: 700; }
+
+@media (max-width: 720px) {
+  .envios-table-wrap { display: none; }
+  .envios-cards { display: flex; }
+}
+/* ===== STOREFRONT — TUS ENVÍOS: FIN ===== */
