@@ -13,7 +13,7 @@ export default function EnviosClient() {
     if (isHydrated && cliente) {
       setLoading(true);
       apiFetchAuth('/envios', cliente.id)
-        .then(data => setEnvios(data))
+        .then(data => setEnvios(Array.isArray(data) ? data : (data?.envios ?? [])))
         .catch(err => setError(err.message || 'Error al cargar envíos.'))
         .finally(() => setLoading(false));
     } else {

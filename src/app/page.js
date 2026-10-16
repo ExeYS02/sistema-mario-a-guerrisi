@@ -1,4 +1,4 @@
-import LandingHero from '@/components/landing/LandingHero';
+import Hero from '@/components/Hero';
 import LandingBeneficios from '@/components/landing/LandingBeneficios';
 import ProductCarousel from '@/components/landing/ProductCarousel';
 import BrandCarousel from '@/components/landing/BrandCarousel';
@@ -16,7 +16,9 @@ export default async function HomePage() {
 
   return (
     <main className="landing-page">
-      <LandingHero />
+      {/* Nuevo Hero estabilizado que reemplaza a LandingHero */}
+      <Hero />
+      
       <LandingBeneficios />
 
       

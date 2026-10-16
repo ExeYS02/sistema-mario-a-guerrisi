@@ -13,10 +13,17 @@ export function AuthProvider({ children }) {
     try {
       const storedClient = localStorage.getItem('cliente_v1');
       if (storedClient) {
-        setCliente(JSON.parse(storedClient));
+        const parsed = JSON.parse(storedClient);
+        // Chequeo defensivo: Validar que sea un objeto plano con un ID (UUID)
+        if (parsed && typeof parsed.id === 'string' && parsed.id.length > 10) {
+          setCliente(parsed);
+        } else {
+          localStorage.removeItem('cliente_v1');
+        }
       }
     } catch (e) {
       console.error('Error cargando cliente de localStorage', e);
+      localStorage.removeItem('cliente_v1');
     }
     setIsHydrated(true);
   }, []);
@@ -38,15 +45,19 @@ export function AuthProvider({ children }) {
 
   const crearCliente = async (datos) => {
     const data = await apiFetch('/clientes', { method: 'POST', body: datos });
-    loginSilencioso(data);
-    return data;
+    // Manejar el caso donde el backend lo envuelva en { cliente: {...} }
+    const clientePlano = data.cliente ? data.cliente : data;
+    loginSilencioso(clientePlano);
+    return clientePlano;
   };
 
   const actualizarCliente = async (datos) => {
     if (!cliente) return;
     const data = await apiFetchAuth('/clientes', cliente.id, { method: 'PUT', body: datos });
-    loginSilencioso(data);
-    return data;
+    // Extraer el cliente plano de la respuesta
+    const clientePlano = data.cliente ? data.cliente : data;
+    loginSilencioso(clientePlano);
+    return clientePlano;
   };
 
   const cerrarSesion = () => {

@@ -67,14 +67,16 @@ export async function obtenerDatosLanding() {
 
   const articulosConStock = resCatalogo.status === 'fulfilled' && !resCatalogo.value.error ? resCatalogo.value.data || [] : [];
   if (resCatalogo.status === 'rejected' || resCatalogo.value?.error) {
-    console.error('Error obteniendo productos con stock:', resCatalogo.reason || resCatalogo.value?.error);
+    const errorReal = resCatalogo.reason || resCatalogo.value?.error;
+    console.error('Error obteniendo productos con stock:', typeof errorReal === 'object' ? JSON.stringify(errorReal, null, 2) : errorReal);
   }
 
   const mapaVentas = new Map();
   if (resVentas.status === 'fulfilled' && !resVentas.value.error) {
     (resVentas.value.data || []).forEach((v) => mapaVentas.set(v.articulo_id, v.total_vendido || 0));
   } else {
-    console.error('Error obteniendo ranking de ventas:', resVentas.reason || resVentas.value?.error);
+    const errorVentas = resVentas.reason || resVentas.value?.error;
+    console.error('Error obteniendo ranking de ventas:', typeof errorVentas === 'object' ? JSON.stringify(errorVentas, null, 2) : errorVentas);
   }
 
   // 1. PREFERIDOS (Top vendidos confirmados real, completado con azar si falta)
@@ -132,7 +134,8 @@ export async function obtenerDatosLanding() {
     });
     marcas = Array.from(marcasMap.values()).sort((a, b) => a.nombre.localeCompare(b.nombre));
   } else {
-    console.error('Error obteniendo carrusel de marcas:', resMarcas.reason || resMarcas.value?.error);
+    const errorMarcas = resMarcas.reason || resMarcas.value?.error;
+    console.error('Error obteniendo carrusel de marcas:', typeof errorMarcas === 'object' ? JSON.stringify(errorMarcas, null, 2) : errorMarcas);
   }
 
   return {
