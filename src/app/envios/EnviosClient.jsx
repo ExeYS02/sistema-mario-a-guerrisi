@@ -1,7 +1,105 @@
 ﻿'use client';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useAuth } from '@/context/AuthContext';
+import { apiFetchAuth } from '@/services/apiClient';
+import { formatearFecha } from '@/utils/format';
 
-import { useState, useEffect } from 'react';
-import { useCart } from '@/context/CartContext';
+const BADGE_ESTADO = {
+  'Pendiente': 'badge-amber',
+  'En Camino': 'badge-blue',
+  'Entregado': 'badge-green',
+  'Cancelado': 'badge-red',
+};
+
+const TABS = [
+  { id: 'todos', label: 'Todos', coincide: () => true },
+  { id: 'curso', label: 'En curso', coincide: (e) => e.estado === 'Pendiente' || e.estado === 'En Camino' },
+  { id: 'entregados', label: 'Entregados', coincide: (e) => e.estado === 'Entregado' },
+  { id: 'cancelados', label: 'Cancelados', coincide: (e) => e.estado === 'Cancelado' },
+];
+
+// 'YYYY-MM-DD' se interpreta como UTC y en Argentina mostraría el día anterior,
+// por eso las fechas "date" se formatean a mano.
+function formatearFechaDate(valor) {
+  if (!valor) return '—';
+  const texto = String(valor);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(texto)) {
+    const [anio, mes, dia] = texto.split('-');
+    return `${dia}/${mes}/${anio}`;
+  }
+  return formatearFecha(texto);
+}
+
+function llegadaEstimada(envio) {
+  if (envio.estado === 'Cancelado' || envio.estado === 'Entregado') return '—';
+  if (envio.fecha_estimada) return formatearFechaDate(envio.fecha_estimada);
+  const base = new Date(envio.fecha_hora_registro);
+  if (Number.isNaN(base.getTime())) return '—';
+  base.setDate(base.getDate() + (envio.tipo === 'retiro' ? 1 : 7));
+  return formatearFecha(base.toISOString());
+}
+
+function etiquetaTipo(tipo) {
+  return tipo === 'retiro' ? 'Retiro en sucursal' : 'Envío a domicilio';
+}
+
+function resumenProductos(envio) {
+  const items = envio.envios_detalle || [];
+  if (items.length === 0) return { principal: '—', extra: '' };
+  const principal = items[0].articulos?.descripcion || 'Artículo';
+  const extra = items.length > 1 ? `+${items.length - 1} más` : `${items[0].cantidad} unidad${items[0].cantidad === 1 ? '' : 'es'}`;
+  return { principal, extra };
+}
+
+function IconoCaja() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+      <path d="M3.27 6.96 12 12.01l8.73-5.05M12 22.08V12" />
+    </svg>
+  );
+}
+
+function IconoLupa() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+    </svg>
+  );
+}
+
+function IconoChevron() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+function EstadoBadge({ estado }) {
+  return (
+    <span className={`badge ${BADGE_ESTADO[estado] || 'badge-gray'}`}>
+      <span className="badge-dot"></span>
+      {estado}
+    </span>
+  );
+}
+
+function DetalleArticulos({ envio }) {
+  const items = envio.envios_detalle || [];
+  return (
+    <ul className="envio-detalle-list">
+      {items.map((det, i) => (
+        <li key={i}>
+          <span className="envio-qty">{det.cantidad}x</span>
+          <span>{det.articulos?.descripcion || 'Artículo'}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 function obtenerClaseEstadoEnvio(estado) {
   const estadoNormalizado = String(estado || '').toLowerCase();
@@ -13,255 +111,238 @@ function obtenerClaseEstadoEnvio(estado) {
 }
 
 export default function EnviosClient() {
-  const { cliente, setCliente } = useCart();
-  
-  const [dniBusqueda, setDniBusqueda] = useState('');
-  const [buscando, setBuscando] = useState(false);
-  const [errorBusqueda, setErrorBusqueda] = useState('');
-  const [clienteEncontrado, setClienteEncontrado] = useState(null);
-  const [showIdentityModal, setShowIdentityModal] = useState(false);
-  const [stepModal, setStepModal] = useState(1);
-  const [codigoIngresado, setCodigoIngresado] = useState(['', '', '', '', '', '']);
-
+  const { cliente, isHydrated, abrirLogin } = useAuth();
   const [envios, setEnvios] = useState([]);
-  const [cargandoEnvios, setCargandoEnvios] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [tab, setTab] = useState('todos');
+  const [busqueda, setBusqueda] = useState('');
+  const [abierto, setAbierto] = useState(null);
 
-  useEffect(() => {
-    const cargarEnvios = async (clienteId) => {
-      setCargandoEnvios(true);
-      try {
-        const res = await fetch(`/api/envios?cliente_id=${clienteId}`);
-        if (res.ok) {
-          const data = await res.json();
-          setEnvios(data);
-        }
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setCargandoEnvios(false);
-      }
-    };
-
-    if (cliente) {
-      cargarEnvios(cliente.id);
-    }
+  const cargar = useCallback(() => {
+    if (!cliente) return;
+    setLoading(true);
+    setError('');
+    apiFetchAuth('/envios', cliente.id)
+      .then((data) => setEnvios(Array.isArray(data) ? data : (data?.envios ?? [])))
+      .catch((err) => setError(err.message || 'No pudimos cargar tus envíos.'))
+      .finally(() => setLoading(false));
   }, [cliente]);
 
-  const handleBuscarCliente = async () => {
-    if (dniBusqueda.length !== 8) {
-      setErrorBusqueda('El DNI debe tener 8 dígitos');
-      return;
-    }
-    setBuscando(true);
-    setErrorBusqueda('');
-    try {
-      const res = await fetch(`/api/clientes?dni=${dniBusqueda}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.cliente) {
-          setClienteEncontrado(data.cliente);
-          setShowIdentityModal(true);
-          setStepModal(1);
-          setCodigoIngresado(['', '', '', '', '', '']);
-        } else {
-          setErrorBusqueda('No se encontró ningún cliente con ese DNI');
-        }
-      } else {
-        if (res.status === 404) {
-          setErrorBusqueda('No se encontró ningún cliente con ese DNI');
-        } else {
-          setErrorBusqueda('Error al buscar el cliente');
-        }
-      }
-    } catch (err) {
-      setErrorBusqueda('Error de conexión');
-    } finally {
-      setBuscando(false);
-    }
-  };
-
-  const handleCodigoChange = (index, value) => {
-    if (value.length > 1) return;
-    const newCode = [...codigoIngresado];
-    newCode[index] = value;
-    setCodigoIngresado(newCode);
-    if (value !== '' && index < 5) {
-      const nextInput = document.getElementById(`code-input-${index + 1}`);
-      if (nextInput) nextInput.focus();
-    }
-  };
-
-  const handleConfirmarCodigo = () => {
-    const codigoCompleto = codigoIngresado.join('');
-    if (codigoCompleto === '123456') {
-      setCliente(clienteEncontrado);
-      setShowIdentityModal(false);
-      setDniBusqueda('');
+  useEffect(() => {
+    if (isHydrated && cliente) {
+      cargar();
     } else {
-      alert('Código incorrecto. Intenta con 123456');
+      setEnvios([]);
     }
+  }, [isHydrated, cliente, cargar]);
+
+  const contadores = useMemo(() => {
+    const resultado = {};
+    TABS.forEach((t) => {
+      resultado[t.id] = envios.filter(t.coincide).length;
+    });
+    return resultado;
+  }, [envios]);
+
+  const visibles = useMemo(() => {
+    const tabActiva = TABS.find((t) => t.id === tab) || TABS[0];
+    const texto = busqueda.trim().toLowerCase();
+    return envios
+      .filter(tabActiva.coincide)
+      .filter((e) => {
+        if (!texto) return true;
+        const comprobante = (e.ventas?.numero_comprobante || '').toLowerCase();
+        const productos = (e.envios_detalle || [])
+          .map((d) => (d.articulos?.descripcion || '').toLowerCase())
+          .join(' ');
+        return comprobante.includes(texto) || productos.includes(texto);
+      });
+  }, [envios, tab, busqueda]);
+
+  const limpiarFiltros = () => {
+    setTab('todos');
+    setBusqueda('');
   };
 
-  const handleCerrarModal = () => {
-    setShowIdentityModal(false);
-    setDniBusqueda('');
-  };
-
-  const cambiarCliente = () => {
-    setCliente(null);
-    setEnvios([]);
-  };
-
-  const formatearFecha = (fechaOriginal, tipo) => {
-    if (!fechaOriginal) return 'Fecha no disponible';
-    const fecha = new Date(fechaOriginal);
-    if (isNaN(fecha.getTime())) return fechaOriginal;
-
-    const fechaBase = new Date(fechaOriginal);
-    if (tipo === 'retiro') {
-      fechaBase.setDate(fechaBase.getDate() + 1);
-      return `Podés retirarlo a partir del: ${fechaBase.toLocaleDateString('es-AR')}`;
-    } else {
-      fechaBase.setDate(fechaBase.getDate() + 7);
-      return `Llegará el: ${fechaBase.toLocaleDateString('es-AR')}`;
-    }
-  };
+  if (!isHydrated) return null;
 
   if (!cliente) {
     return (
-      <div className="card" style={{ maxWidth: '500px', margin: '0 auto', padding: '2rem' }}>
-        <h3>Identifícate para ver tus envíos</h3>
-        <p style={{ marginBottom: '1rem', color: 'var(--text-secondary)' }}>
-          Ingresa tu DNI para buscar tus pedidos asociados.
-        </p>
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-          <input
-            type="text"
-            className="input"
-            placeholder="Buscar por DNI (8 dígitos)..."
-            value={dniBusqueda}
-            onChange={(e) => setDniBusqueda(e.target.value.replace(/\D/g, '').slice(0, 8))}
-            onKeyDown={(e) => e.key === 'Enter' && handleBuscarCliente()}
-          />
-          <button className="btn btn-primary" onClick={handleBuscarCliente} disabled={buscando}>
-            {buscando ? 'Buscando...' : 'Buscar'}
-          </button>
-        </div>
-        {errorBusqueda && <p style={{ color: 'var(--danger-color)' }}>{errorBusqueda}</p>}
+      <div className="empty-state">
+        <IconoCaja />
+        <h2>Ingresá para ver tus envíos</h2>
+        <p>Necesitamos saber quién sos para mostrarte el estado de tus compras y retiros.</p>
+        <button className="btn btn-primary" onClick={abrirLogin} style={{ marginTop: 8 }}>
+          Ingresar
+        </button>
+      </div>
+    );
+  }
 
-        {showIdentityModal && (
-          <div className="modal-overlay open" onClick={handleCerrarModal}>
-            <div className="modal" style={{ maxWidth: '400px', width: '90%' }} onClick={(e) => e.stopPropagation()}>
-              <div className="modal-header">
-                <h3>Confirmar identidad</h3>
-                <button className="modal-close" onClick={handleCerrarModal} aria-label="Cerrar ventana">
-                  <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                </button>
-              </div>
-              <div className="modal-body">
-                {stepModal === 1 ? (
-                  <>
-                    <p>¿Deseas identificarte como <strong>{clienteEncontrado?.razon_social}</strong>, DNI <strong>{clienteEncontrado?.dni}</strong>?</p>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '2rem' }}>
-                      <button className="btn btn-secondary" onClick={handleCerrarModal}>Cancelar</button>
-                      <button className="btn btn-primary" onClick={() => setStepModal(2)}>Continuar</button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <p style={{ marginBottom: '1.5rem' }}>
-                      Para confirmar tu identidad, hemos enviado un código a tu correo registrado (<strong>{clienteEncontrado?.email || 'correo'}</strong>). Por favor ingrésalo debajo:
-                    </p>
-                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', marginBottom: '2rem' }}>
-                      {codigoIngresado.map((digit, idx) => (
-                        <input
-                          key={idx}
-                          id={`code-input-${idx}`}
-                          type="text"
-                          className="input"
-                          style={{ width: '40px', height: '50px', textAlign: 'center', fontSize: '1.5rem', padding: '0' }}
-                          maxLength={1}
-                          value={digit}
-                          onChange={(e) => handleCodigoChange(idx, e.target.value)}
-                        />
-                      ))}
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
-                      <button className="btn btn-secondary" onClick={() => setStepModal(1)}>Volver</button>
-                      <button className="btn btn-primary" onClick={handleConfirmarCodigo}>Confirmar</button>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+  if (error) {
+    return (
+      <div className="empty-state">
+        <IconoCaja />
+        <h2 style={{ color: 'var(--crit)' }}>No pudimos cargar tus envíos</h2>
+        <p>{error}</p>
+        <button className="btn btn-outline" onClick={cargar} style={{ marginTop: 8 }}>
+          Reintentar
+        </button>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="table-panel" aria-busy="true">
+        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="skeleton" style={{ height: 44, borderRadius: 8 }} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (envios.length === 0) {
+    return (
+      <div className="empty-state">
+        <IconoCaja />
+        <h2>Todavía no tenés envíos</h2>
+        <p>Cuando hagas una compra, vas a poder seguir su estado desde acá.</p>
+        <Link href="/catalogo" className="btn btn-primary" style={{ marginTop: 8 }}>
+          Ver catálogo
+        </Link>
       </div>
     );
   }
 
   return (
     <div>
-      <div className="card" style={{ padding: '1.5rem', marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <h2 style={{ fontSize: '1.25rem', marginBottom: '0.25rem' }}>Hola, {cliente.razon_social}</h2>
-          <p style={{ color: 'var(--text-secondary)', margin: 0 }}>DNI: {cliente.dni} | Email: {cliente.email}</p>
-        </div>
-        <button className="btn btn-secondary" onClick={cambiarCliente}>Cambiar cliente</button>
+      <div className="tab-rail envios-tabs" role="tablist">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            role="tab"
+            aria-selected={tab === t.id}
+            className={`tab-btn ${tab === t.id ? 'active' : ''}`}
+            onClick={() => setTab(t.id)}
+          >
+            {t.label}
+            <span className="tab-btn-badge">{contadores[t.id]}</span>
+          </button>
+        ))}
       </div>
 
-      {cargandoEnvios ? (
-        <p>Cargando tus envíos...</p>
-      ) : envios.length === 0 ? (
-        <div className="card" style={{ padding: '3rem', textAlign: 'center' }}>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem' }}>No tienes envíos ni retiros registrados.</p>
+      <div className="catalog-toolbar" style={{ marginBottom: 14 }}>
+        <div className="search-input">
+          <IconoLupa />
+          <input
+            type="text"
+            placeholder="Buscar por comprobante o producto…"
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            aria-label="Buscar envíos"
+          />
+        </div>
+      </div>
+
+      {visibles.length === 0 ? (
+        <div className="empty-state">
+          <IconoCaja />
+          <h2>No encontramos envíos</h2>
+          <p>Ningún envío coincide con los filtros seleccionados.</p>
+          <button className="btn btn-outline" onClick={limpiarFiltros} style={{ marginTop: 8 }}>
+            Limpiar filtros
+          </button>
         </div>
       ) : (
-        <div className="shipment-list">
-          {envios.map(envio => (
-            <article key={envio.id} className="card shipment-card">
-              <header className="shipment-card__header">
-                <div className="shipment-card__summary">
-                  <h3 className="shipment-card__title">
-                    <span className={`shipment-status ${obtenerClaseEstadoEnvio(envio.estado)}`}>
-                      {envio.estado}
-                    </span>
-                    {envio.tipo === 'retiro' ? 'Retiro en Sucursal' : 'Envío a Domicilio'}
-                  </h3>
-                  <p className="shipment-card__eta">
-                    {envio.fecha_estimada ? (
-                      envio.tipo === 'retiro' 
-                        ? `Podés retirarlo a partir del: ${new Date(envio.fecha_estimada).toLocaleDateString('es-AR')}`
-                        : `Llegará el: ${new Date(envio.fecha_estimada).toLocaleDateString('es-AR')}`
-                    ) : (
-                      formatearFecha(envio.fecha_registro || envio.fecha_hora_registro || envio.created_at, envio.tipo)
-                    )}
-                  </p>
-                </div>
-                <div className="shipment-card__meta">
-                  <p>Comprobante <strong>{envio.numero_comprobante}</strong></p>
-                  <p>Estado de venta <strong>{envio.venta_estado}</strong></p>
-                  <p>Registrado el <strong>{new Date(envio.fecha_registro || envio.fecha_hora_registro || envio.created_at).toLocaleDateString('es-AR')}</strong></p>
-                </div>
-              </header>
+        <>
+          <p className="envios-resumen">
+            {visibles.length} envío{visibles.length === 1 ? '' : 's'}
+          </p>
 
-              <section className="shipment-card__items">
-                <h4>Artículos incluidos</h4>
-                <ul>
-                  {envio.envios_detalle && envio.envios_detalle.map((detalle, idx) => (
-                    <li key={idx}>
-                      <div className="shipment-card__product">
-                        <span className="shipment-card__product-name">{detalle.articulos?.descripcion}</span>
-                        <span className="shipment-card__product-model">Mod: {detalle.articulos?.modelo}</span>
-                      </div>
-                      <span className="shipment-card__quantity">x{detalle.cantidad}</span>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            </article>
-          ))}
-        </div>
+          {/* Desktop: grilla */}
+          <div className="table-panel envios-table-wrap">
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th style={{ width: 44 }}></th>
+                    <th>Comprobante</th>
+                    <th>Productos</th>
+                    <th>Tipo</th>
+                    <th>Fecha</th>
+                    <th>Llegada estimada</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibles.map((envio) => {
+                    const { principal, extra } = resumenProductos(envio);
+                    const expandido = abierto === envio.id;
+                    return (
+                      <Fragment key={envio.id}>
+                        <tr>
+                          <td>
+                            <button
+                              className={`icon-btn envio-chevron ${expandido ? 'open' : ''}`}
+                              aria-label={expandido ? 'Ocultar artículos' : 'Ver artículos'}
+                              aria-expanded={expandido}
+                              onClick={() => setAbierto(expandido ? null : envio.id)}
+                            >
+                              <IconoChevron />
+                            </button>
+                          </td>
+                          <td className="cell-mono">
+                            {envio.ventas?.numero_comprobante || 'Procesando'}
+                          </td>
+                          <td className="cell-strong">
+                            {principal}
+                            <div className="cell-sub">{extra}</div>
+                          </td>
+                          <td>{etiquetaTipo(envio.tipo)}</td>
+                          <td className="envio-fecha">{formatearFecha(envio.fecha_hora_registro)}</td>
+                          <td className="envio-fecha">{llegadaEstimada(envio)}</td>
+                          <td><EstadoBadge estado={envio.estado} /></td>
+                        </tr>
+                        {expandido && (
+                          <tr className="envio-detalle-row">
+                            <td colSpan={7}>
+                              <DetalleArticulos envio={envio} />
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Mobile: tarjetas apiladas */}
+          <div className="envios-cards">
+            {visibles.map((envio) => (
+              <div key={envio.id} className="envio-card">
+                <div className="envio-card-top">
+                  <span className="cell-mono">{envio.ventas?.numero_comprobante || 'Procesando'}</span>
+                  <EstadoBadge estado={envio.estado} />
+                </div>
+                <div className="envio-card-meta">
+                  <span>{etiquetaTipo(envio.tipo)}</span>
+                  <span className="envio-fecha">{formatearFecha(envio.fecha_hora_registro)}</span>
+                </div>
+                <DetalleArticulos envio={envio} />
+                <div className="envio-card-llegada">
+                  <span>Llegada estimada</span>
+                  <strong className="envio-fecha">{llegadaEstimada(envio)}</strong>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
